@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentiment Fee Hook</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    .title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: #666;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    /* Search Section */
+    .search-section {
+      margin-bottom: 40px;
+    }
+
+    .search-box {
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 16px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .search-input::placeholder {
+      color: #666;
+    }
+
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #1a1a2e;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      margin-top: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+
+    .search-results.active {
+      display: block;
+    }
+
+    .search-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .search-item:hover {
+      background: rgba(255,255,255,0.05);
+    }
+
+    .search-item img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+
+    .search-item-info {
+      flex: 1;
+    }
+
+    .search-item-name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .search-item-symbol {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+    }
+
+    /* Token Card */
+    .token-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 30px;
+      margin-bottom: 30px;
+      display: none;
+    }
+
+    .token-card.active {
+      display: block;
+    }
+
+    .token-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+
+    .token-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+    }
+
+    .token-name {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .token-symbol {
+      font-size: 14px;
+      color: #666;
+      text-transform: uppercase;
+    }
+
+    /* Sentiment Display */
+    .sentiment-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .sentiment-row:last-child {
+      border-bottom: none;
+    }
+
+    .sentiment-label {
+      font-size: 14px;
+      color: #888;
+    }
+
+    .sentiment-value {
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .sentiment-value.positive { color: #22c55e; }
+    .sentiment-value.negative { color: #ef4444; }
+    .sentiment-value.neutral { color: #eab308; }
+
+    /* Score Display */
+    .score-section {
+      text-align: center;
+      padding: 30px 0;
+    }
+
+    .score-circle {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      margin: 0 auto 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .score-circle::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      padding: 3px;
+      background: linear-gradient(135deg, #22c55e, #eab308, #ef4444);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+    }
+
+    .score-number {
+      font-size: 48px;
+      font-weight: 300;
+    }
+
+    .score-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .score-mood {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      padding: 8px 20px;
+      border-radius: 20px;
+      display: inline-block;
+    }
+
+    .score-mood.fear { color: #22c55e; background: rgba(34,197,94,0.1); }
+    .score-mood.neutral { color: #eab308; background: rgba(234,179,8,0.1); }
+    .score-mood.greed { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+    /* Fee Display */
+    .fee-section {
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .fee-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+
+    .fee-value {
+      font-size: 32px;
+      font-weight: 300;
+    }
+
+    .fee-value span {
+      font-size: 18px;
+      color: #666;
+    }
+
+    /* Hook Status - Enhanced */
+    .hook-section {
+      margin-top: 30px;
+      padding: 24px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%);
+      border: 1px solid rgba(139,92,246,0.2);
+      border-radius: 16px;
+    }
+
+    .hook-label {
+      font-size: 11px;
+      color: #a78bfa;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    .hook-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .hook-stat {
+      background: rgba(0,0,0,0.2);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .hook-stat-label {
+      font-size: 10px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .hook-stat-value {
+      font-size: 28px;
+      font-weight: 300;
+    }
+
+    .hook-stat-value.sentiment { color: #a78bfa; }
+    .hook-stat-value.fee { color: #22c55e; }
+
+    .hook-formula {
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .hook-formula .val { color: #a78bfa; }
+    .hook-formula .result { color: #22c55e; }
+
+    .hook-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.stale {
+      background: #ef4444;
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid rgba(255,255,255,0.1);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="title">Sentiment Fee Hook</div>
+
+    <!-- Search -->
+    <div class="search-section">
+      <div class="search-box">
+        <input
+          type="text"
+          class="search-input"
+          id="searchInput"
+          placeholder="Search any token (e.g. Bitcoin, ETH, SOL...)"
+        >
+        <div class="search-results" id="searchResults"></div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading" id="loading" style="display: none;">
+      <div class="spinner"></div>
+      <div>Fetching token data...</div>
+    </div>
+
+    <!-- Token Card -->
+    <div class="token-card" id="tokenCard">
+      <div class="token-header">
+        <img class="token-icon" id="tokenIcon" src="" alt="">
+        <div>
+          <div class="token-name" id="tokenName">-</div>
+          <div class="token-symbol" id="tokenSymbol">-</div>
+        </div>
+      </div>
+
+      <div class="sentiment-row">
+        <span class="sentiment-label">24h Change</span>
+        <span class="sentiment-value" id="change24h">-</span>
+      </div>
+      <div class="sentiment-row">
+        <span class="sentiment-label">7d Change</span>
+        <span class="sentiment-value" id="change7d">-</span>
+      </div>
+      <div class="sentiment-row">
+        <span class="sentiment-label">30d Change</span>
+        <span class="sentiment-value" id="change30d">-</span>
+      </div>
+      <div class="sentiment-row">
+        <span class="sentiment-label">From ATH</span>
+        <span class="sentiment-value" id="changeAth">-</span>
+      </div>
+
+      <div class="score-section">
+        <div class="score-circle">
+          <div class="score-number" id="sentimentScore">-</div>
+          <div class="score-label">Sentiment</div>
+        </div>
+        <div class="score-mood" id="sentimentMood">-</div>
+      </div>
+
+      <div class="fee-section">
+        <div class="fee-label">Suggested Pool Fee</div>
+        <div class="fee-value"><span id="suggestedFee">-</span><span>%</span></div>
+      </div>
+    </div>
+
+    <!-- Hook Status - Enhanced -->
+    <div class="hook-section">
+      <div class="hook-label">On-Chain Fee Calculation</div>
+      <div class="hook-grid">
+        <div class="hook-stat">
+          <div class="hook-stat-label">Market Sentiment</div>
+          <div class="hook-stat-value sentiment" id="hookSentiment">--</div>
+        </div>
+        <div class="hook-stat">
+          <div class="hook-stat-label">Current Fee</div>
+          <div class="hook-stat-value fee" id="hookFee">--%</div>
+        </div>
+      </div>
+      <div class="hook-formula">
+        fee = 2500 + (<span class="val" id="formulaSentiment">--</span> x 19) = <span class="result" id="formulaResult">--</span> bps
+      </div>
+      <div class="hook-status">
+        <div class="status-dot" id="hookStatusDot"></div>
+        <span id="hookStatusText">Connecting...</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+  <script>
+    const HOOK_ADDRESS = '0xB8878656883E5762bf4F15E9C696336440a28080';
+    const RPC_URL = 'http://127.0.0.1:8545';
+    const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+
+    const ABI = [
+      'function sentimentScore() view returns (uint8)',
+      'function getCurrentFee() view returns (uint24)',
+      'function isStale() view returns (bool)'
+    ];
+
+    let searchTimeout;
+
+    // Search functionality
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      const query = e.target.value.trim();
+
+      if (query.length < 2) {
+        searchResults.classList.remove('active');
+        return;
+      }
+
+      searchTimeout = setTimeout(() => searchTokens(query), 300);
+    });
+
+    async function searchTokens(query) {
+      try {
+        const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(query)}`);
+        const data = await res.json();
+
+        if (data.coins && data.coins.length > 0) {
+          renderSearchResults(data.coins.slice(0, 8));
+        } else {
+          searchResults.innerHTML = '<div class="search-item">No results found</div>';
+          searchResults.classList.add('active');
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+      }
+    }
+
+    function renderSearchResults(coins) {
+      searchResults.innerHTML = coins.map(coin => `
+        <div class="search-item" onclick="selectToken('${coin.id}')">
+          <img src="${coin.thumb}" alt="${coin.name}">
+          <div class="search-item-info">
+            <div class="search-item-name">${coin.name}</div>
+            <div class="search-item-symbol">${coin.symbol}</div>
+          </div>
+        </div>
+      `).join('');
+      searchResults.classList.add('active');
+    }
+
+    async function selectToken(coinId) {
+      searchResults.classList.remove('active');
+      searchInput.value = '';
+
+      document.getElementById('tokenCard').classList.remove('active');
+      document.getElementById('loading').style.display = 'block';
+
+      try {
+        const res = await fetch(
+          `${COINGECKO_API}/coins/${coinId}?localization=false&tickers=false&community_data=false&developer_data=false&sparkline=false`
+        );
+        const data = await res.json();
+
+        displayTokenData(data);
+      } catch (err) {
+        console.error('Token fetch error:', err);
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    function displayTokenData(data) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('tokenCard').classList.add('active');
+
+      // Header
+      document.getElementById('tokenIcon').src = data.image?.large || '';
+      document.getElementById('tokenName').textContent = data.name;
+      document.getElementById('tokenSymbol').textContent = data.symbol;
+
+      // Price changes
+      const md = data.market_data;
+      const change24h = md?.price_change_percentage_24h || 0;
+      const change7d = md?.price_change_percentage_7d || 0;
+      const change30d = md?.price_change_percentage_30d || 0;
+      const changeAth = md?.ath_change_percentage?.usd || 0;
+
+      setChangeValue('change24h', change24h);
+      setChangeValue('change7d', change7d);
+      setChangeValue('change30d', change30d);
+      setChangeValue('changeAth', changeAth);
+
+      // Calculate sentiment score
+      const sentiment = calculateTokenSentiment(change24h, change7d, change30d, changeAth);
+
+      document.getElementById('sentimentScore').textContent = sentiment.score;
+
+      const moodEl = document.getElementById('sentimentMood');
+      moodEl.textContent = sentiment.mood;
+      moodEl.className = 'score-mood ' + sentiment.class;
+
+      // Calculate suggested fee
+      const fee = (2500 + (sentiment.score * 19)) / 10000;
+      document.getElementById('suggestedFee').textContent = fee.toFixed(2);
+    }
+
+    function setChangeValue(id, value) {
+      const el = document.getElementById(id);
+      const formatted = value.toFixed(2) + '%';
+      el.textContent = (value >= 0 ? '+' : '') + formatted;
+      el.className = 'sentiment-value ' + (value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral');
+    }
+
+    function calculateTokenSentiment(h24, d7, d30, ath) {
+      // Weight: 24h=40%, 7d=30%, 30d=20%, ATH=10%
+      // Map each to 0-100 range
+
+      const score24h = Math.min(100, Math.max(0, (h24 + 20) * 2.5)); // -20% to +20% -> 0-100
+      const score7d = Math.min(100, Math.max(0, (d7 + 30) * 1.67)); // -30% to +30% -> 0-100
+      const score30d = Math.min(100, Math.max(0, (d30 + 50) * 1)); // -50% to +50% -> 0-100
+      const scoreAth = Math.min(100, Math.max(0, (ath + 100) * 0.5)); // -100% to 0% -> 0-50
+
+      const weighted = (score24h * 0.4) + (score7d * 0.3) + (score30d * 0.2) + (scoreAth * 0.1);
+      const score = Math.round(weighted);
+
+      let mood, moodClass;
+      if (score <= 20) { mood = 'Extreme Fear'; moodClass = 'fear'; }
+      else if (score <= 40) { mood = 'Fear'; moodClass = 'fear'; }
+      else if (score <= 60) { mood = 'Neutral'; moodClass = 'neutral'; }
+      else if (score <= 80) { mood = 'Greed'; moodClass = 'greed'; }
+      else { mood = 'Extreme Greed'; moodClass = 'greed'; }
+
+      return { score, mood, class: moodClass };
+    }
+
+    // Hook status
+    async function fetchHookStatus() {
+      try {
+        const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+        const hook = new ethers.Contract(HOOK_ADDRESS, ABI, provider);
+
+        const [sentiment, fee, isStale] = await Promise.all([
+          hook.sentimentScore(),
+          hook.getCurrentFee(),
+          hook.isStale()
+        ]);
+
+        const sentimentNum = Number(sentiment);
+        const feeNum = Number(fee);
+
+        // Update main stats
+        document.getElementById('hookSentiment').textContent = sentimentNum;
+        document.getElementById('hookFee').textContent = (feeNum / 10000).toFixed(2) + '%';
+
+        // Update formula
+        document.getElementById('formulaSentiment').textContent = sentimentNum;
+        document.getElementById('formulaResult').textContent = feeNum;
+
+        // Update status
+        const dot = document.getElementById('hookStatusDot');
+        const statusText = document.getElementById('hookStatusText');
+
+        if (isStale) {
+          dot.className = 'status-dot stale';
+          statusText.textContent = 'Data is stale - needs update';
+        } else {
+          dot.className = 'status-dot';
+          statusText.textContent = 'Live on Anvil (localhost:8545)';
+        }
+
+      } catch (err) {
+        console.error('Hook fetch error:', err);
+        document.getElementById('hookSentiment').textContent = '--';
+        document.getElementById('hookFee').textContent = '--%';
+        document.getElementById('formulaSentiment').textContent = '--';
+        document.getElementById('formulaResult').textContent = '--';
+        document.getElementById('hookStatusDot').className = 'status-dot stale';
+        document.getElementById('hookStatusText').textContent = 'Cannot connect to hook';
+      }
+    }
+
+    // Close search on click outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-box')) {
+        searchResults.classList.remove('active');
+      }
+    });
+
+    // Initial hook fetch
+    fetchHookStatus();
+    setInterval(fetchHookStatus, 10000);
+  </script>
+</body>
+</html>

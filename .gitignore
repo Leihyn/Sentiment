@@ -1,0 +1,28 @@
+# Build artifacts
+cache/
+out/
+broadcast/
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude/AI session data
+.claude/
+
+# Lock files (optional - remove if you want to track)
+foundry.lock
