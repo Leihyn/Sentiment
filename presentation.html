@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentiment-Responsive Fee Hook - Presentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+        }
+
+        .slide {
+            width: 100%;
+            min-height: 100vh;
+            padding: 60px 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            page-break-after: always;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255,107,107,0.1) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .slide-number {
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            font-size: 14px;
+            color: rgba(255,255,255,0.4);
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 40px;
+            color: #ff6b6b;
+        }
+
+        h3 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #48dbfb;
+        }
+
+        p {
+            font-size: 1.4rem;
+            line-height: 1.8;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 20px;
+        }
+
+        .subtitle {
+            font-size: 1.8rem;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 40px;
+        }
+
+        .tagline {
+            font-size: 1.2rem;
+            color: #feca57;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+        }
+
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        li {
+            font-size: 1.3rem;
+            line-height: 2;
+            color: rgba(255,255,255,0.85);
+            padding-left: 30px;
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 12px;
+            width: 12px;
+            height: 12px;
+            background: linear-gradient(135deg, #ff6b6b, #feca57);
+            border-radius: 50%;
+        }
+
+        .highlight {
+            color: #feca57;
+            font-weight: 600;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            margin-top: 30px;
+        }
+
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        .fee-example {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            margin: 15px 0;
+        }
+
+        .fee-label {
+            font-size: 1.2rem;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .fee-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        .fear { color: #ff6b6b; }
+        .neutral { color: #feca57; }
+        .greed { color: #1dd1a1; }
+
+        .architecture-box {
+            background: rgba(0,0,0,0.3);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+            margin: 20px 0;
+        }
+
+        .architecture-box h4 {
+            font-size: 1.4rem;
+            color: #48dbfb;
+            margin-bottom: 15px;
+        }
+
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .tech-tag {
+            background: rgba(255,107,107,0.2);
+            border: 1px solid rgba(255,107,107,0.4);
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-size: 1rem;
+            color: #ff6b6b;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin-top: 40px;
+        }
+
+        .stat-box {
+            text-align: center;
+            padding: 30px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #ff6b6b, #feca57);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 10px;
+        }
+
+        .formula {
+            background: rgba(0,0,0,0.4);
+            padding: 25px 40px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 1.3rem;
+            color: #48dbfb;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .center {
+            text-align: center;
+        }
+
+        .logo-text {
+            font-size: 5rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #1dd1a1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 30px;
+        }
+
+        @media print {
+            .slide {
+                page-break-after: always;
+                min-height: 100vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Slide 1: Title -->
+    <div class="slide">
+        <div class="center">
+            <div class="tagline">Uniswap v4 Hook</div>
+            <div class="logo-text">Sentiment Fee Hook</div>
+            <p class="subtitle">Dynamic fees that adapt to market psychology</p>
+            <div class="tech-stack" style="justify-content: center;">
+                <span class="tech-tag">Dynamic Fee</span>
+                <span class="tech-tag">Custom Hooks</span>
+                <span class="tech-tag">Oracle</span>
+                <span class="tech-tag">LP Fees</span>
+                <span class="tech-tag">DEX</span>
+            </div>
+        </div>
+        <div class="slide-number">1</div>
+    </div>
+
+    <!-- Slide 2: Problem -->
+    <div class="slide">
+        <h2>The Problem</h2>
+        <p style="font-size: 1.6rem; margin-bottom: 40px;">Traditional AMMs use <span class="highlight">fixed fees</span> that are suboptimal in all market conditions.</p>
+
+        <div class="two-column">
+            <div class="card">
+                <h3 class="fear">Bull Markets (Greed)</h3>
+                <ul>
+                    <li>Traders willingly pay more</li>
+                    <li>Fixed 0.3% fees leave money on the table</li>
+                    <li>LPs miss potential revenue</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3 class="fear">Bear Markets (Fear)</h3>
+                <ul>
+                    <li>Fixed fees kill trading volume</li>
+                    <li>Traders avoid the exchange</li>
+                    <li>LPs earn nothing</li>
+                </ul>
+            </div>
+        </div>
+        <div class="slide-number">2</div>
+    </div>
+
+    <!-- Slide 3: Solution -->
+    <div class="slide">
+        <h2>Our Solution</h2>
+        <p style="font-size: 1.6rem;">Counter-cyclical dynamic fees based on <span class="highlight">real-time market sentiment</span></p>
+
+        <div class="fee-example">
+            <div>
+                <span class="fee-label">Extreme Fear (0)</span>
+            </div>
+            <div class="fee-value fear">0.25% fee</div>
+        </div>
+
+        <div class="fee-example">
+            <div>
+                <span class="fee-label">Neutral (50)</span>
+            </div>
+            <div class="fee-value neutral">0.345% fee</div>
+        </div>
+
+        <div class="fee-example">
+            <div>
+                <span class="fee-label">Extreme Greed (100)</span>
+            </div>
+            <div class="fee-value greed">0.44% fee</div>
+        </div>
+
+        <p style="margin-top: 30px; text-align: center; color: rgba(255,255,255,0.6);">
+            Maximizes <span class="highlight">fee x volume</span> across all market cycles
+        </p>
+        <div class="slide-number">3</div>
+    </div>
+
+    <!-- Slide 4: Architecture -->
+    <div class="slide">
+        <h2>Architecture</h2>
+
+        <div class="two-column">
+            <div class="architecture-box">
+                <h4>Off-Chain: Keeper Bot</h4>
+                <ul>
+                    <li>Aggregates 8 free data sources</li>
+                    <li>Weighted sentiment scoring</li>
+                    <li>Updates every 4 hours</li>
+                    <li>$0/month data costs</li>
+                </ul>
+            </div>
+            <div class="architecture-box">
+                <h4>On-Chain: Hook Contract</h4>
+                <ul>
+                    <li>Uniswap v4 beforeSwap hook</li>
+                    <li>EMA smoothing (anti-manipulation)</li>
+                    <li>Staleness protection (6hr fallback)</li>
+                    <li>Gas-efficient design</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="formula">
+            fee = MIN_FEE + (sentimentScore x FEE_RANGE / 100)
+        </div>
+        <div class="slide-number">4</div>
+    </div>
+
+    <!-- Slide 5: Data Sources -->
+    <div class="slide">
+        <h2>Sentiment Data Sources</h2>
+        <p>8 free APIs aggregated with weighted scoring</p>
+
+        <div class="two-column" style="margin-top: 20px;">
+            <div>
+                <ul>
+                    <li><span class="highlight">Fear & Greed Index (30%)</span> - alternative.me</li>
+                    <li><span class="highlight">CoinGecko Global (20%)</span> - Market data</li>
+                    <li><span class="highlight">CoinGecko Trending (10%)</span> - Hype indicator</li>
+                    <li><span class="highlight">Bitcoin Dominance (10%)</span> - Risk appetite</li>
+                </ul>
+            </div>
+            <div>
+                <ul>
+                    <li><span class="highlight">DeFi Llama TVL (10%)</span> - DeFi health</li>
+                    <li><span class="highlight">ETH Price Movement (10%)</span> - Momentum</li>
+                    <li><span class="highlight">CryptoCompare Social (5%)</span> - Social signals</li>
+                    <li><span class="highlight">Blockchain.com Stats (5%)</span> - On-chain activity</li>
+                </ul>
+            </div>
+        </div>
+        <div class="slide-number">5</div>
+    </div>
+
+    <!-- Slide 6: Security -->
+    <div class="slide">
+        <h2>Security & Anti-Manipulation</h2>
+
+        <div class="two-column">
+            <div class="card">
+                <h3>EMA Smoothing</h3>
+                <p style="font-size: 1.1rem;">30% new data / 70% historical prevents sudden fee manipulation</p>
+                <div class="formula" style="font-size: 1rem;">newEMA = (raw x 0.3) + (current x 0.7)</div>
+            </div>
+            <div class="card">
+                <h3>Anti-Frontrunning</h3>
+                <p style="font-size: 1.1rem;">Randomized timing jitter (+/- 30 min) makes update times unpredictable</p>
+            </div>
+        </div>
+
+        <div style="margin-top: 40px;">
+            <ul>
+                <li>Staleness protection: Auto fallback to 0.30% after 6 hours</li>
+                <li>Multi-keeper support: Multiple authorized update addresses</li>
+                <li>Input validation: Sentiment constrained to 0-100 range</li>
+            </ul>
+        </div>
+        <div class="slide-number">6</div>
+    </div>
+
+    <!-- Slide 7: Tech Stack -->
+    <div class="slide">
+        <h2>Tech Stack</h2>
+
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="stat-number">40</div>
+                <div class="stat-label">Test Cases</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">8</div>
+                <div class="stat-label">Data Sources</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">$0</div>
+                <div class="stat-label">Monthly Data Cost</div>
+            </div>
+        </div>
+
+        <div class="tech-stack" style="margin-top: 50px;">
+            <span class="tech-tag">Solidity 0.8.26</span>
+            <span class="tech-tag">Foundry</span>
+            <span class="tech-tag">Uniswap v4</span>
+            <span class="tech-tag">TypeScript</span>
+            <span class="tech-tag">ethers.js</span>
+            <span class="tech-tag">OpenZeppelin</span>
+        </div>
+
+        <div style="margin-top: 40px;">
+            <p style="font-size: 1.1rem; color: rgba(255,255,255,0.6);">
+                Supports: Ethereum, Arbitrum, Base, Optimism, Polygon + Testnets
+            </p>
+        </div>
+        <div class="slide-number">7</div>
+    </div>
+
+    <!-- Slide 8: Decentralization Roadmap -->
+    <div class="slide">
+        <h2>Decentralization Roadmap</h2>
+
+        <div class="two-column">
+            <div>
+                <h3 style="color: #48dbfb;">v1 - Current (Implemented)</h3>
+                <ul style="font-size: 1.1rem;">
+                    <li>Multi-keeper support</li>
+                    <li>Randomized timing jitter</li>
+                    <li>EMA smoothing + staleness fallback</li>
+                </ul>
+
+                <h3 style="color: #feca57; margin-top: 30px;">v1.5 - Short-term</h3>
+                <ul style="font-size: 1.1rem;">
+                    <li>Chainlink Automation</li>
+                    <li>Multi-sig keeper (3-of-5)</li>
+                </ul>
+            </div>
+            <div>
+                <h3 style="color: #ff6b6b;">v2 - Medium-term</h3>
+                <ul style="font-size: 1.1rem;">
+                    <li>Chainlink Functions (trustless)</li>
+                    <li>Multiple data aggregators</li>
+                </ul>
+
+                <h3 style="color: #a78bfa; margin-top: 30px;">v3 - Long-term</h3>
+                <ul style="font-size: 1.1rem;">
+                    <li>Decentralized oracle network</li>
+                    <li>DAO governance</li>
+                </ul>
+            </div>
+        </div>
+
+        <p style="margin-top: 30px; font-size: 1.1rem; text-align: center; color: rgba(255,255,255,0.6);">
+            Clear path to full decentralization without sacrificing current functionality
+        </p>
+        <div class="slide-number">8</div>
+    </div>
+
+    <!-- Slide 9: Demo -->
+    <div class="slide">
+        <h2>Quick Start</h2>
+
+        <div class="architecture-box">
+            <h4>Run Tests</h4>
+            <div class="formula">forge test</div>
+        </div>
+
+        <div class="architecture-box">
+            <h4>Local Demo</h4>
+            <div class="formula">bash demo.sh</div>
+        </div>
+
+        <div class="architecture-box">
+            <h4>Deploy & Run Keeper</h4>
+            <div class="formula">forge script script/DeployFullDemo.s.sol --broadcast</div>
+            <div class="formula">cd keeper && npx ts-node src/multi-source-keeper.ts</div>
+        </div>
+        <div class="slide-number">9</div>
+    </div>
+
+    <!-- Slide 10: Thank You -->
+    <div class="slide">
+        <div class="center">
+            <div class="logo-text">Thank You</div>
+            <p class="subtitle">Sentiment-Responsive Fee Hook for Uniswap v4</p>
+
+            <div style="margin-top: 60px;">
+                <p style="font-size: 1.2rem; color: rgba(255,255,255,0.6);">
+                    Dynamic fees that adapt to market psychology
+                </p>
+                <p style="font-size: 1.2rem; color: rgba(255,255,255,0.6); margin-top: 10px;">
+                    Maximizing LP revenue across all market cycles
+                </p>
+            </div>
+
+            <div class="tech-stack" style="justify-content: center; margin-top: 50px;">
+                <span class="tech-tag">MIT License</span>
+                <span class="tech-tag">Open Source</span>
+            </div>
+        </div>
+        <div class="slide-number">10</div>
+    </div>
+</body>
+</html>

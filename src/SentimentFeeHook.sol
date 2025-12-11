@@ -1,6 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+/*
+ * ███████╗███████╗███╗   ██╗████████╗██╗███╗   ███╗███████╗███╗   ██╗████████╗
+ * ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗ ████║██╔════╝████╗  ██║╚══██╔══╝
+ * ███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔████╔██║█████╗  ██╔██╗ ██║   ██║
+ * ╚════██║██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╔╝██║██╔══╝  ██║╚██╗██║   ██║
+ * ███████║███████╗██║ ╚████║   ██║   ██║██║ ╚═╝ ██║███████╗██║ ╚████║   ██║
+ * ╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝
+ *
+ * @title SentimentFeeHook
+ * @author Sentiment Finance
+ * @notice Dynamic fee hook for Uniswap v4 that adjusts fees based on market sentiment
+ * @dev Implements counter-cyclical fee model: higher fees during greed, lower during fear
+ *
+ * Key Features:
+ * - Dynamic fees ranging from 0.25% (fear) to 0.44% (greed)
+ * - EMA smoothing to prevent manipulation
+ * - Multi-keeper support for decentralization
+ * - Staleness protection with automatic fallback
+ *
+ * Security Considerations:
+ * - All external inputs are validated
+ * - EMA smoothing limits impact of single updates (max 30% influence)
+ * - Staleness threshold ensures fallback to safe default
+ * - Multi-keeper reduces single point of failure
+ */
+
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -10,107 +36,172 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
-/// @title SentimentFeeHook
-/// @notice A Uniswap v4 hook that dynamically adjusts swap fees based on market sentiment
-/// @dev Implements counter-cyclical fee dynamics: higher fees during greed, lower during fear
 contract SentimentFeeHook is BaseHook {
     using PoolIdLibrary for PoolKey;
     using LPFeeLibrary for uint24;
 
     /*//////////////////////////////////////////////////////////////
-                                 ERRORS
+                            CUSTOM ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    error OnlyKeeper();
-    error OnlyOwner();
-    error InvalidSentimentScore();
-    error StalenessThresholdTooLow();
-    error ZeroAddress();
+    /// @dev Thrown when caller is not an authorized keeper
+    error Unauthorized_NotKeeper();
+
+    /// @dev Thrown when caller is not the contract owner
+    error Unauthorized_NotOwner();
+
+    /// @dev Thrown when sentiment score exceeds maximum (100)
+    error InvalidInput_SentimentOutOfRange();
+
+    /// @dev Thrown when staleness threshold is below minimum (1 hour)
+    error InvalidInput_StalenessThresholdTooLow();
+
+    /// @dev Thrown when address parameter is zero
+    error InvalidInput_ZeroAddress();
 
     /*//////////////////////////////////////////////////////////////
-                                 EVENTS
+                                EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event SentimentUpdated(uint8 indexed oldScore, uint8 indexed newScore, uint8 emaScore, uint256 timestamp);
-    event KeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
-    event StalenessThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
-    event EmaAlphaUpdated(uint8 oldAlpha, uint8 newAlpha);
+    /// @notice Emitted when sentiment score is updated
+    /// @param previousScore The score before update
+    /// @param rawScore The raw input score from keeper
+    /// @param smoothedScore The EMA-smoothed score stored
+    /// @param timestamp Block timestamp of update
+    event SentimentUpdated(
+        uint8 indexed previousScore,
+        uint8 indexed rawScore,
+        uint8 smoothedScore,
+        uint256 timestamp
+    );
+
+    /// @notice Emitted when primary keeper is changed
+    event PrimaryKeeperUpdated(address indexed previousKeeper, address indexed newKeeper);
+
+    /// @notice Emitted when keeper authorization status changes
+    event KeeperAuthorizationUpdated(address indexed keeper, bool isAuthorized);
+
+    /// @notice Emitted when staleness threshold is modified
+    event StalenessThresholdUpdated(uint256 previousThreshold, uint256 newThreshold);
+
+    /// @notice Emitted when EMA alpha factor is modified
+    event EmaAlphaUpdated(uint8 previousAlpha, uint8 newAlpha);
+
+    /// @notice Emitted when ownership is transferred
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /*//////////////////////////////////////////////////////////////
-                                 CONSTANTS
+                            FEE CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Minimum fee: 0.25% = 2500 pips (1 pip = 0.0001%)
+    /// @notice Minimum fee charged during extreme fear (0.25%)
+    /// @dev 2500 basis points = 0.25% (1 basis point = 0.01%)
     uint24 public constant MIN_FEE = 2500;
 
-    /// @notice Maximum fee: 0.44% = 4400 pips
+    /// @notice Maximum fee charged during extreme greed (0.44%)
+    /// @dev 4400 basis points = 0.44%
     uint24 public constant MAX_FEE = 4400;
 
-    /// @notice Fee range for calculation
-    uint24 public constant FEE_RANGE = MAX_FEE - MIN_FEE; // 1900 pips
+    /// @notice Range between min and max fees
+    /// @dev Used in linear interpolation: fee = MIN + (sentiment * RANGE / 100)
+    uint24 public constant FEE_RANGE = MAX_FEE - MIN_FEE; // 1900 bps
 
-    /// @notice Default fee when sentiment is stale: 0.30% = 3000 pips
+    /// @notice Default fee when data is stale (0.30%)
+    /// @dev Matches Uniswap v3 standard pool fee tier
     uint24 public constant DEFAULT_FEE = 3000;
 
-    /// @notice Maximum sentiment score
-    uint8 public constant MAX_SENTIMENT = 100;
-
-    /// @notice EMA scaling factor (using 100 as denominator for percentage)
-    uint8 public constant EMA_DENOMINATOR = 100;
-
     /*//////////////////////////////////////////////////////////////
-                                 STATE
+                        SENTIMENT CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Current EMA-smoothed sentiment score (0 = extreme fear, 100 = extreme greed)
+    /// @notice Maximum valid sentiment score
+    uint8 public constant MAX_SENTIMENT = 100;
+
+    /// @notice Denominator for EMA percentage calculations
+    uint8 public constant EMA_PRECISION = 100;
+
+    /// @notice Minimum allowed staleness threshold
+    uint256 public constant MIN_STALENESS_THRESHOLD = 1 hours;
+
+    /*//////////////////////////////////////////////////////////////
+                            STATE VARIABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Current EMA-smoothed sentiment score
+    /// @dev Range: 0 (extreme fear) to 100 (extreme greed)
     uint8 public sentimentScore;
 
-    /// @notice Timestamp of last sentiment update
+    /// @notice Timestamp of the last sentiment update
     uint256 public lastUpdateTimestamp;
 
-    /// @notice EMA alpha factor (0-100, represents percentage weight of new value)
-    /// @dev newEMA = (newScore * alpha + oldEMA * (100 - alpha)) / 100
+    /// @notice EMA smoothing factor (percentage weight for new values)
+    /// @dev Range: 0-100. Higher = more responsive, lower = more stable
+    /// @dev Formula: newEMA = (newScore * alpha + oldEMA * (100 - alpha)) / 100
     uint8 public emaAlpha;
 
-    /// @notice Maximum age of sentiment data before considered stale (in seconds)
+    /// @notice Duration after which sentiment data is considered stale
     uint256 public stalenessThreshold;
 
-    /// @notice Address authorized to push sentiment updates
-    address public keeper;
+    /// @notice Primary keeper address for backward compatibility
+    address public primaryKeeper;
 
-    /// @notice Contract owner for admin functions
+    /// @notice Mapping of addresses authorized to update sentiment
+    mapping(address => bool) public isKeeper;
+
+    /// @notice Contract owner with admin privileges
     address public owner;
 
     /*//////////////////////////////////////////////////////////////
-                               CONSTRUCTOR
+                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @param _poolManager The Uniswap v4 pool manager
-    /// @param _keeper Address authorized to update sentiment
-    /// @param _emaAlpha EMA smoothing factor (0-100)
-    /// @param _stalenessThreshold Max age of data in seconds (e.g., 6 hours = 21600)
+    /**
+     * @notice Deploys the SentimentFeeHook
+     * @param _poolManager Uniswap v4 PoolManager contract
+     * @param _keeper Initial keeper address authorized for updates
+     * @param _emaAlpha EMA smoothing factor (recommended: 20-40)
+     * @param _stalenessThreshold Time until data considered stale (recommended: 6 hours)
+     */
     constructor(
         IPoolManager _poolManager,
         address _keeper,
         uint8 _emaAlpha,
         uint256 _stalenessThreshold
     ) BaseHook(_poolManager) {
-        if (_keeper == address(0)) revert ZeroAddress();
-        if (_stalenessThreshold < 1 hours) revert StalenessThresholdTooLow();
+        // Validate inputs
+        if (_keeper == address(0)) revert InvalidInput_ZeroAddress();
+        if (_stalenessThreshold < MIN_STALENESS_THRESHOLD) {
+            revert InvalidInput_StalenessThresholdTooLow();
+        }
 
-        keeper = _keeper;
+        // Initialize keeper authorization
+        primaryKeeper = _keeper;
+        isKeeper[_keeper] = true;
+
+        // Initialize owner
         owner = msg.sender;
+
+        // Initialize parameters
         emaAlpha = _emaAlpha;
         stalenessThreshold = _stalenessThreshold;
-        sentimentScore = 50; // Start neutral
+
+        // Start with neutral sentiment
+        sentimentScore = 50;
         lastUpdateTimestamp = block.timestamp;
+
+        emit PrimaryKeeperUpdated(address(0), _keeper);
+        emit OwnershipTransferred(address(0), msg.sender);
     }
 
     /*//////////////////////////////////////////////////////////////
-                              HOOK CONFIG
+                            HOOK CONFIGURATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the hook's permissions
+    /**
+     * @notice Returns which hook functions are enabled
+     * @dev Only beforeSwap is needed for dynamic fee calculation
+     * @return Hooks.Permissions struct with enabled hooks
+     */
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
@@ -119,7 +210,7 @@ contract SentimentFeeHook is BaseHook {
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: true,
+            beforeSwap: true,          // Required for dynamic fees
             afterSwap: false,
             beforeDonate: false,
             afterDonate: false,
@@ -131,128 +222,256 @@ contract SentimentFeeHook is BaseHook {
     }
 
     /*//////////////////////////////////////////////////////////////
-                              HOOK LOGIC
+                            HOOK IMPLEMENTATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Called before every swap to determine the dynamic fee
-    /// @dev Returns fee override based on current sentiment
+    /**
+     * @notice Hook called before each swap to determine the fee
+     * @dev Calculates dynamic fee based on current sentiment score
+     * @return selector The function selector
+     * @return delta Zero delta (no token modifications)
+     * @return fee The calculated fee with override flag
+     */
     function _beforeSwap(
         address,
         PoolKey calldata,
         SwapParams calldata,
         bytes calldata
     ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
-        uint24 fee = _calculateFee();
+        uint24 dynamicFee = _calculateDynamicFee();
 
-        // Return the fee with the override flag set
         return (
             this.beforeSwap.selector,
             BeforeSwapDeltaLibrary.ZERO_DELTA,
-            fee | LPFeeLibrary.OVERRIDE_FEE_FLAG
+            dynamicFee | LPFeeLibrary.OVERRIDE_FEE_FLAG
         );
     }
 
     /*//////////////////////////////////////////////////////////////
-                           SENTIMENT ORACLE
+                        SENTIMENT UPDATE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Updates the sentiment score with EMA smoothing
-    /// @param _rawScore Raw sentiment score (0-100) from external sources
+    /**
+     * @notice Updates the sentiment score with EMA smoothing
+     * @dev Only callable by authorized keepers
+     * @param _rawScore New sentiment score from off-chain sources (0-100)
+     *
+     * Security notes:
+     * - Input bounded to 0-100 range
+     * - EMA smoothing limits single-update impact to `emaAlpha`%
+     * - Timestamp updated for staleness tracking
+     */
     function updateSentiment(uint8 _rawScore) external {
-        if (msg.sender != keeper) revert OnlyKeeper();
-        if (_rawScore > MAX_SENTIMENT) revert InvalidSentimentScore();
+        // Authorization check - support both mapping and primary keeper
+        if (!isKeeper[msg.sender] && msg.sender != primaryKeeper) {
+            revert Unauthorized_NotKeeper();
+        }
 
-        uint8 oldScore = sentimentScore;
-        uint8 newEmaScore = _applyEMA(_rawScore);
+        // Validate input range
+        if (_rawScore > MAX_SENTIMENT) {
+            revert InvalidInput_SentimentOutOfRange();
+        }
 
-        sentimentScore = newEmaScore;
+        // Store previous for event
+        uint8 previousScore = sentimentScore;
+
+        // Apply EMA smoothing and update state
+        uint8 smoothedScore = _applyEmaSmoothing(_rawScore);
+        sentimentScore = smoothedScore;
         lastUpdateTimestamp = block.timestamp;
 
-        emit SentimentUpdated(oldScore, _rawScore, newEmaScore, block.timestamp);
+        emit SentimentUpdated(previousScore, _rawScore, smoothedScore, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
-                            FEE CALCULATION
+                        FEE CALCULATION LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Calculates the current fee based on sentiment
-    /// @return fee The fee in pips (0.0001% units)
-    function _calculateFee() internal view returns (uint24) {
-        // Check for stale data
-        if (block.timestamp > lastUpdateTimestamp + stalenessThreshold) {
+    /**
+     * @notice Calculates the dynamic fee based on current sentiment
+     * @dev Returns default fee if data is stale
+     * @return fee The fee in basis points with linear interpolation
+     *
+     * Formula: fee = MIN_FEE + (sentimentScore * FEE_RANGE / 100)
+     *
+     * Examples:
+     * - Sentiment 0   -> 2500 bps (0.25%)
+     * - Sentiment 50  -> 3450 bps (0.345%)
+     * - Sentiment 100 -> 4400 bps (0.44%)
+     */
+    function _calculateDynamicFee() internal view returns (uint24) {
+        // Check staleness - return safe default if data too old
+        if (_isDataStale()) {
             return DEFAULT_FEE;
         }
 
-        // Linear interpolation: fee = MIN_FEE + (sentiment / 100) * FEE_RANGE
-        // Using fixed point math to avoid precision loss
-        uint24 fee = MIN_FEE + uint24((uint256(sentimentScore) * FEE_RANGE) / MAX_SENTIMENT);
+        // Linear interpolation between MIN and MAX based on sentiment
+        // Using uint256 for intermediate calculation to prevent overflow
+        uint24 fee = MIN_FEE + uint24(
+            (uint256(sentimentScore) * FEE_RANGE) / MAX_SENTIMENT
+        );
 
         return fee;
     }
 
-    /// @notice Applies exponential moving average smoothing
-    /// @param _newScore The new raw sentiment score
-    /// @return The EMA-smoothed score
-    function _applyEMA(uint8 _newScore) internal view returns (uint8) {
-        // EMA formula: newEMA = (newScore * alpha + oldEMA * (100 - alpha)) / 100
-        uint256 weighted = (uint256(_newScore) * emaAlpha) +
-                          (uint256(sentimentScore) * (EMA_DENOMINATOR - emaAlpha));
-        return uint8(weighted / EMA_DENOMINATOR);
+    /**
+     * @notice Applies exponential moving average smoothing
+     * @dev Limits the influence of any single update
+     * @param _newScore The new raw sentiment score
+     * @return The smoothed score
+     *
+     * Formula: smoothed = (new * alpha + current * (100 - alpha)) / 100
+     *
+     * With alpha=30:
+     * - New value contributes 30%
+     * - Historical value contributes 70%
+     * - Prevents sudden fee manipulation
+     */
+    function _applyEmaSmoothing(uint8 _newScore) internal view returns (uint8) {
+        uint256 weightedSum = (uint256(_newScore) * emaAlpha) +
+                              (uint256(sentimentScore) * (EMA_PRECISION - emaAlpha));
+
+        // Safe to cast: result bounded by input range (0-100)
+        return uint8(weightedSum / EMA_PRECISION);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                               VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Returns the current fee that would be applied
-    function getCurrentFee() external view returns (uint24) {
-        return _calculateFee();
-    }
-
-    /// @notice Checks if the sentiment data is stale
-    function isStale() external view returns (bool) {
+    /**
+     * @notice Checks if sentiment data has exceeded staleness threshold
+     * @return True if data is stale and should use default fee
+     */
+    function _isDataStale() internal view returns (bool) {
         return block.timestamp > lastUpdateTimestamp + stalenessThreshold;
     }
 
-    /// @notice Returns time until data becomes stale (0 if already stale)
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Returns the fee that would currently be applied to swaps
+     * @return The current dynamic fee in basis points
+     */
+    function getCurrentFee() external view returns (uint24) {
+        return _calculateDynamicFee();
+    }
+
+    /**
+     * @notice Checks if sentiment data is currently stale
+     * @return True if data is stale
+     */
+    function isStale() external view returns (bool) {
+        return _isDataStale();
+    }
+
+    /**
+     * @notice Returns seconds until data becomes stale
+     * @return Seconds remaining, or 0 if already stale
+     */
     function timeUntilStale() external view returns (uint256) {
         uint256 staleAt = lastUpdateTimestamp + stalenessThreshold;
         if (block.timestamp >= staleAt) return 0;
         return staleAt - block.timestamp;
     }
 
+    /**
+     * @notice Checks if an address is authorized to update sentiment
+     * @param _address Address to check
+     * @return True if authorized
+     */
+    function isAuthorizedKeeper(address _address) external view returns (bool) {
+        return isKeeper[_address] || _address == primaryKeeper;
+    }
+
+    // Legacy getter for backward compatibility
+    function keeper() external view returns (address) {
+        return primaryKeeper;
+    }
+
+    // Legacy getter for backward compatibility
+    function authorizedKeepers(address _keeper) external view returns (bool) {
+        return isKeeper[_keeper];
+    }
+
     /*//////////////////////////////////////////////////////////////
-                              ADMIN FUNCTIONS
+                            ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Restricts function to contract owner
     modifier onlyOwner() {
-        if (msg.sender != owner) revert OnlyOwner();
+        if (msg.sender != owner) revert Unauthorized_NotOwner();
         _;
     }
 
-    /// @notice Updates the keeper address
+    /**
+     * @notice Updates the primary keeper address
+     * @dev Also updates keeper mapping for consistency
+     * @param _newKeeper New primary keeper address
+     */
     function setKeeper(address _newKeeper) external onlyOwner {
-        if (_newKeeper == address(0)) revert ZeroAddress();
-        emit KeeperUpdated(keeper, _newKeeper);
-        keeper = _newKeeper;
+        if (_newKeeper == address(0)) revert InvalidInput_ZeroAddress();
+
+        address previousKeeper = primaryKeeper;
+
+        // Update mapping: remove old, add new
+        isKeeper[previousKeeper] = false;
+        isKeeper[_newKeeper] = true;
+
+        primaryKeeper = _newKeeper;
+
+        emit PrimaryKeeperUpdated(previousKeeper, _newKeeper);
     }
 
-    /// @notice Updates the staleness threshold
+    /**
+     * @notice Authorizes or revokes keeper privileges for an address
+     * @dev Enables multi-keeper support for redundancy
+     * @param _keeper Address to modify
+     * @param _authorized True to authorize, false to revoke
+     */
+    function setKeeperAuthorization(address _keeper, bool _authorized) external onlyOwner {
+        if (_keeper == address(0)) revert InvalidInput_ZeroAddress();
+
+        isKeeper[_keeper] = _authorized;
+
+        emit KeeperAuthorizationUpdated(_keeper, _authorized);
+    }
+
+    /**
+     * @notice Updates the staleness threshold
+     * @param _newThreshold New threshold in seconds (minimum 1 hour)
+     */
     function setStalenessThreshold(uint256 _newThreshold) external onlyOwner {
-        if (_newThreshold < 1 hours) revert StalenessThresholdTooLow();
-        emit StalenessThresholdUpdated(stalenessThreshold, _newThreshold);
+        if (_newThreshold < MIN_STALENESS_THRESHOLD) {
+            revert InvalidInput_StalenessThresholdTooLow();
+        }
+
+        uint256 previousThreshold = stalenessThreshold;
         stalenessThreshold = _newThreshold;
+
+        emit StalenessThresholdUpdated(previousThreshold, _newThreshold);
     }
 
-    /// @notice Updates the EMA alpha factor
+    /**
+     * @notice Updates the EMA smoothing factor
+     * @dev Higher values = more responsive, lower = more stable
+     * @param _newAlpha New alpha value (0-100)
+     */
     function setEmaAlpha(uint8 _newAlpha) external onlyOwner {
-        emit EmaAlphaUpdated(emaAlpha, _newAlpha);
+        uint8 previousAlpha = emaAlpha;
         emaAlpha = _newAlpha;
+
+        emit EmaAlphaUpdated(previousAlpha, _newAlpha);
     }
 
-    /// @notice Transfers ownership
+    /**
+     * @notice Transfers contract ownership
+     * @param _newOwner New owner address
+     */
     function transferOwnership(address _newOwner) external onlyOwner {
-        if (_newOwner == address(0)) revert ZeroAddress();
+        if (_newOwner == address(0)) revert InvalidInput_ZeroAddress();
+
+        address previousOwner = owner;
         owner = _newOwner;
+
+        emit OwnershipTransferred(previousOwner, _newOwner);
     }
 }

@@ -1,40 +1,74 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test, console2} from "forge-std/Test.sol";
+/**
+ * @title SentimentFeeHook Unit Tests
+ * @notice Comprehensive test suite for the Sentiment Fee Hook contract
+ * @dev Tests cover: constructor validation, fee calculation, EMA smoothing,
+ *      staleness detection, access control, multi-keeper support, and events
+ *
+ * Test Categories:
+ * - Constructor Tests: Validates initialization and input validation
+ * - Fee Calculation Tests: Verifies dynamic fee computation at various sentiment levels
+ * - EMA Smoothing Tests: Ensures anti-manipulation smoothing works correctly
+ * - Staleness Tests: Validates data freshness checks and default fee fallback
+ * - Access Control Tests: Confirms proper authorization for all admin functions
+ * - Multi-Keeper Tests: Tests decentralized keeper authorization system
+ * - Event Tests: Verifies all events emit with correct parameters
+ * - Hook Permission Tests: Confirms correct Uniswap v4 hook flags
+ */
+
+import {Test} from "forge-std/Test.sol";
 import {SentimentFeeHook} from "../src/SentimentFeeHook.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {HookMiner} from "./utils/HookMiner.sol";
 
 contract SentimentFeeHookTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                               TEST STATE
+    //////////////////////////////////////////////////////////////*/
+
     SentimentFeeHook public hook;
     PoolManager public poolManager;
 
+    /// @dev Test addresses with memorable values for debugging
     address public owner = address(this);
     address public keeper = address(0xBEEF);
     address public user = address(0xCAFE);
 
-    uint8 constant EMA_ALPHA = 30; // 30% weight to new values
+    /*//////////////////////////////////////////////////////////////
+                            TEST CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice EMA smoothing factor: 30% weight to new values, 70% to historical
+    uint8 constant EMA_ALPHA = 30;
+
+    /// @notice Data considered stale after 6 hours without updates
     uint256 constant STALENESS_THRESHOLD = 6 hours;
 
-    // Expected fee constants (from contract)
-    uint24 constant MIN_FEE = 2500;
-    uint24 constant MAX_FEE = 4400;
-    uint24 constant DEFAULT_FEE = 3000;
-    uint24 constant FEE_RANGE = MAX_FEE - MIN_FEE;
+    /// @notice Fee bounds matching contract constants (in basis points)
+    uint24 constant MIN_FEE = 2500;   // 0.25% during extreme fear
+    uint24 constant MAX_FEE = 4400;   // 0.44% during extreme greed
+    uint24 constant DEFAULT_FEE = 3000; // 0.30% when data is stale
+    uint24 constant FEE_RANGE = MAX_FEE - MIN_FEE; // 1900 bps range
 
+    /*//////////////////////////////////////////////////////////////
+                              TEST SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Deploys the hook contract with a valid address for Uniswap v4
+     * @dev Hook addresses must have specific bit flags set. We use CREATE2
+     *      salt mining to find an address with the correct beforeSwap flag.
+     */
     function setUp() public {
-        // Deploy PoolManager
+        // Step 1: Deploy Uniswap v4 PoolManager (required dependency)
         poolManager = new PoolManager(address(0));
 
-        // Mine valid hook address
+        // Step 2: Mine a valid hook address with BEFORE_SWAP_FLAG set
+        // Uniswap v4 derives hook permissions from the hook's address bits
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
 
         bytes memory constructorArgs = abi.encode(
@@ -51,7 +85,7 @@ contract SentimentFeeHookTest is Test {
             constructorArgs
         );
 
-        // Deploy hook to mined address
+        // Step 3: Deploy hook using CREATE2 with the mined salt
         hook = new SentimentFeeHook{salt: salt}(
             IPoolManager(address(poolManager)),
             keeper,
@@ -59,7 +93,7 @@ contract SentimentFeeHookTest is Test {
             STALENESS_THRESHOLD
         );
 
-        // Verify deployment address
+        // Step 4: Verify deployment succeeded at expected address
         assertEq(address(hook), hookAddress, "Hook address mismatch");
     }
 
@@ -91,7 +125,7 @@ contract SentimentFeeHookTest is Test {
             constructorArgs
         );
 
-        vm.expectRevert(SentimentFeeHook.ZeroAddress.selector);
+        vm.expectRevert(SentimentFeeHook.InvalidInput_ZeroAddress.selector);
         new SentimentFeeHook{salt: salt}(
             IPoolManager(address(poolManager)),
             address(0),
@@ -116,7 +150,7 @@ contract SentimentFeeHookTest is Test {
             constructorArgs
         );
 
-        vm.expectRevert(SentimentFeeHook.StalenessThresholdTooLow.selector);
+        vm.expectRevert(SentimentFeeHook.InvalidInput_StalenessThresholdTooLow.selector);
         new SentimentFeeHook{salt: salt}(
             IPoolManager(address(poolManager)),
             keeper,
@@ -267,19 +301,19 @@ contract SentimentFeeHookTest is Test {
 
     function test_updateSentiment_onlyKeeper() public {
         vm.prank(user);
-        vm.expectRevert(SentimentFeeHook.OnlyKeeper.selector);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotKeeper.selector);
         hook.updateSentiment(75);
     }
 
     function test_updateSentiment_revertsOnInvalidScore() public {
         vm.prank(keeper);
-        vm.expectRevert(SentimentFeeHook.InvalidSentimentScore.selector);
+        vm.expectRevert(SentimentFeeHook.InvalidInput_SentimentOutOfRange.selector);
         hook.updateSentiment(101);
     }
 
     function test_setKeeper_onlyOwner() public {
         vm.prank(user);
-        vm.expectRevert(SentimentFeeHook.OnlyOwner.selector);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotOwner.selector);
         hook.setKeeper(user);
     }
 
@@ -290,13 +324,13 @@ contract SentimentFeeHookTest is Test {
     }
 
     function test_setKeeper_revertsOnZeroAddress() public {
-        vm.expectRevert(SentimentFeeHook.ZeroAddress.selector);
+        vm.expectRevert(SentimentFeeHook.InvalidInput_ZeroAddress.selector);
         hook.setKeeper(address(0));
     }
 
     function test_setStalenessThreshold_onlyOwner() public {
         vm.prank(user);
-        vm.expectRevert(SentimentFeeHook.OnlyOwner.selector);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotOwner.selector);
         hook.setStalenessThreshold(12 hours);
     }
 
@@ -306,13 +340,13 @@ contract SentimentFeeHookTest is Test {
     }
 
     function test_setStalenessThreshold_revertsOnLowValue() public {
-        vm.expectRevert(SentimentFeeHook.StalenessThresholdTooLow.selector);
+        vm.expectRevert(SentimentFeeHook.InvalidInput_StalenessThresholdTooLow.selector);
         hook.setStalenessThreshold(30 minutes);
     }
 
     function test_setEmaAlpha_onlyOwner() public {
         vm.prank(user);
-        vm.expectRevert(SentimentFeeHook.OnlyOwner.selector);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotOwner.selector);
         hook.setEmaAlpha(50);
     }
 
@@ -323,7 +357,7 @@ contract SentimentFeeHookTest is Test {
 
     function test_transferOwnership_onlyOwner() public {
         vm.prank(user);
-        vm.expectRevert(SentimentFeeHook.OnlyOwner.selector);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotOwner.selector);
         hook.transferOwnership(user);
     }
 
@@ -332,12 +366,12 @@ contract SentimentFeeHookTest is Test {
         assertEq(hook.owner(), user);
 
         // Old owner can't call owner functions anymore
-        vm.expectRevert(SentimentFeeHook.OnlyOwner.selector);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotOwner.selector);
         hook.setKeeper(address(0xDEAD));
     }
 
     function test_transferOwnership_revertsOnZeroAddress() public {
-        vm.expectRevert(SentimentFeeHook.ZeroAddress.selector);
+        vm.expectRevert(SentimentFeeHook.InvalidInput_ZeroAddress.selector);
         hook.transferOwnership(address(0));
     }
 
@@ -355,8 +389,99 @@ contract SentimentFeeHookTest is Test {
     function test_setKeeper_emitsEvent() public {
         address newKeeper = address(0xDEAD);
         vm.expectEmit(true, true, false, false);
-        emit SentimentFeeHook.KeeperUpdated(keeper, newKeeper);
+        emit SentimentFeeHook.PrimaryKeeperUpdated(keeper, newKeeper);
         hook.setKeeper(newKeeper);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          MULTI-KEEPER TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_setKeeperAuthorization_addsKeeper() public {
+        address newKeeper = makeAddr("newKeeper");
+
+        // Initially not authorized
+        assertFalse(hook.authorizedKeepers(newKeeper));
+
+        // Authorize
+        hook.setKeeperAuthorization(newKeeper, true);
+        assertTrue(hook.authorizedKeepers(newKeeper));
+    }
+
+    function test_setKeeperAuthorization_removesKeeper() public {
+        address newKeeper = makeAddr("newKeeper2");
+
+        // Authorize then revoke
+        hook.setKeeperAuthorization(newKeeper, true);
+        assertTrue(hook.authorizedKeepers(newKeeper));
+
+        hook.setKeeperAuthorization(newKeeper, false);
+        assertFalse(hook.authorizedKeepers(newKeeper));
+    }
+
+    function test_setKeeperAuthorization_onlyOwner() public {
+        address newKeeper = makeAddr("newKeeper3");
+        address attacker = makeAddr("attacker");
+
+        vm.prank(attacker);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotOwner.selector);
+        hook.setKeeperAuthorization(newKeeper, true);
+    }
+
+    function test_setKeeperAuthorization_revertsOnZeroAddress() public {
+        vm.expectRevert(SentimentFeeHook.InvalidInput_ZeroAddress.selector);
+        hook.setKeeperAuthorization(address(0), true);
+    }
+
+    function test_multiKeeper_authorizedCanUpdate() public {
+        address keeper2 = makeAddr("keeper2");
+
+        // Authorize second keeper
+        hook.setKeeperAuthorization(keeper2, true);
+
+        // Second keeper can update
+        vm.prank(keeper2);
+        hook.updateSentiment(80);
+
+        // Verify update happened (with EMA smoothing: 80*0.3 + 50*0.7 = 59)
+        assertEq(hook.sentimentScore(), 59);
+    }
+
+    function test_multiKeeper_unauthorizedCannotUpdate() public {
+        address unauthorized = makeAddr("unauthorized");
+
+        vm.prank(unauthorized);
+        vm.expectRevert(SentimentFeeHook.Unauthorized_NotKeeper.selector);
+        hook.updateSentiment(80);
+    }
+
+    function test_isAuthorizedKeeper_returnsTrueForPrimaryKeeper() public view {
+        assertTrue(hook.isAuthorizedKeeper(keeper));
+    }
+
+    function test_isAuthorizedKeeper_returnsTrueForAuthorizedKeeper() public {
+        address keeper2 = makeAddr("keeper2ForAuth");
+        hook.setKeeperAuthorization(keeper2, true);
+        assertTrue(hook.isAuthorizedKeeper(keeper2));
+    }
+
+    function test_isAuthorizedKeeper_returnsFalseForUnauthorized() public {
+        address unauthorized = makeAddr("unauthorized2");
+        assertFalse(hook.isAuthorizedKeeper(unauthorized));
+    }
+
+    function test_setKeeper_updatesAuthorizedMapping() public {
+        address newKeeper = address(0xDEAD);
+
+        // Original keeper is authorized
+        assertTrue(hook.authorizedKeepers(keeper));
+
+        // Set new keeper
+        hook.setKeeper(newKeeper);
+
+        // Old keeper removed from mapping, new one added
+        assertFalse(hook.authorizedKeepers(keeper));
+        assertTrue(hook.authorizedKeepers(newKeeper));
     }
 
     /*//////////////////////////////////////////////////////////////

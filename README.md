@@ -5,7 +5,7 @@ A Uniswap v4 hook that dynamically adjusts swap fees based on real-time market s
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue)
 ![Foundry](https://img.shields.io/badge/Foundry-Latest-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/Tests-40%20Passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-50%20Passing-brightgreen)
 
 ---
 
@@ -41,7 +41,7 @@ The Sentiment-Responsive Fee Hook is a Uniswap v4 hook that implements dynamic f
 - **EMA Smoothing**: Prevents fee manipulation through exponential moving average
 - **Staleness Protection**: Falls back to default fee if data becomes stale
 - **Gas Efficient**: Minimal on-chain computation, off-chain data aggregation
-- **Fully Tested**: 40 comprehensive tests (32 unit + 8 integration)
+- **Fully Tested**: 50 comprehensive tests (42 unit + 8 integration)
 
 ---
 
@@ -296,9 +296,9 @@ forge coverage
 
 | Test Suite | Count | Description |
 |------------|-------|-------------|
-| Unit Tests | 32 | Core functionality, access control, EMA |
+| Unit Tests | 42 | Core functionality, access control, EMA, multi-keeper |
 | Integration Tests | 8 | Full swap flow with PoolManager |
-| **Total** | **40** | All passing |
+| **Total** | **50** | All passing |
 
 ---
 
@@ -427,9 +427,11 @@ Total cost: **$0/month** for data
 
 | Function | Access | Protection |
 |----------|--------|------------|
-| `updateSentiment()` | Keeper only | `onlyKeeper` modifier |
+| `updateSentiment()` | Authorized keepers | `isKeeper` mapping check |
 | `setKeeper()` | Owner only | `onlyOwner` modifier |
+| `setKeeperAuthorization()` | Owner only | `onlyOwner` modifier |
 | `setEmaAlpha()` | Owner only | `onlyOwner` modifier |
+| `setStalenessThreshold()` | Owner only | `onlyOwner` modifier |
 | `transferOwnership()` | Owner only | `onlyOwner` modifier |
 
 ### Manipulation Resistance
@@ -443,14 +445,69 @@ Total cost: **$0/month** for data
 
 | Risk | Mitigation |
 |------|------------|
-| Keeper compromise | EMA limits impact; owner can replace keeper |
-| Data source manipulation | Multiple sources aggregated |
-| Stale data | Auto-fallback to default fee |
-| Front-running updates | EMA smoothing reduces profit opportunity |
+| Keeper compromise | EMA limits impact; owner can replace keeper; multi-keeper support |
+| Data source manipulation | 8 sources with weighted aggregation |
+| Stale data | Auto-fallback to default fee after 6 hours |
+| Front-running updates | EMA smoothing + randomized timing jitter |
+| Single point of failure | Multi-keeper authorization system |
 
 ### Audit Status
 
 ⚠️ **This code has not been audited.** Use at your own risk. Recommended to get professional audit before mainnet deployment with significant TVL.
+
+---
+
+## Decentralization Roadmap
+
+The hook is designed with a clear path to decentralization:
+
+### Current Implementation (v1)
+- ✅ Single keeper with staleness fallback
+- ✅ EMA smoothing prevents manipulation
+- ✅ Multi-keeper support (multiple authorized addresses)
+- ✅ Randomized update timing (anti-frontrunning jitter)
+
+### Short-Term (v1.5)
+- 🔜 Multi-sig keeper (3-of-5 trusted updaters)
+- 🔜 Chainlink Automation for reliable execution
+- 🔜 Gelato Network as backup executor
+
+### Medium-Term (v2)
+- 📅 Chainlink Functions for trustless off-chain computation
+- 📅 Multiple independent data aggregators
+- 📅 On-chain verification of data source signatures
+
+### Long-Term (v3)
+- 🔮 Fully decentralized oracle network
+- 🔮 TEE-based computation for sensitive data
+- 🔮 DAO governance for parameter updates
+
+### Multi-Keeper Usage
+
+```solidity
+// Owner can authorize multiple keepers
+hook.setKeeperAuthorization(keeper1, true);
+hook.setKeeperAuthorization(keeper2, true);
+hook.setKeeperAuthorization(keeper3, true);
+
+// Any authorized keeper can update
+hook.updateSentiment(75); // Works from any authorized address
+
+// Check if address is authorized
+bool isKeeper = hook.isAuthorizedKeeper(someAddress);
+```
+
+### Anti-Frontrunning
+
+The keeper includes randomized timing jitter to make update times unpredictable:
+
+```bash
+# Enable jitter (default: ±30 minutes)
+JITTER_MINUTES=30 npx ts-node src/multi-source-keeper.ts
+
+# Disable jitter for testing
+npx ts-node src/multi-source-keeper.ts --no-jitter
+```
 
 ---
 
@@ -477,6 +534,7 @@ HOOK_ADDRESS=0x...
 # Optional
 UPDATE_INTERVAL=14400000      # 4 hours in ms
 MIN_CHANGE_THRESHOLD=5        # Min score change to update
+JITTER_MINUTES=30             # Random delay range for anti-frontrunning
 ```
 
 ---
@@ -501,30 +559,45 @@ function timeUntilStale() external view returns (uint256);
 // Get last update timestamp
 function lastUpdateTimestamp() external view returns (uint256);
 
-// Get keeper address
+// Get primary keeper address
+function primaryKeeper() external view returns (address);
+
+// Legacy getter for backward compatibility
 function keeper() external view returns (address);
+
+// Check if address is authorized keeper
+function isAuthorizedKeeper(address _address) external view returns (bool);
+
+// Check keeper mapping directly
+function isKeeper(address) external view returns (bool);
 
 // Get EMA alpha value
 function emaAlpha() external view returns (uint8);
 
 // Get staleness threshold
 function stalenessThreshold() external view returns (uint256);
+
+// Get contract owner
+function owner() external view returns (address);
 ```
 
 ### Write Functions
 
 ```solidity
-// Update sentiment (keeper only)
+// Update sentiment (authorized keeper only)
 function updateSentiment(uint8 _rawScore) external;
 
-// Set new keeper (owner only)
-function setKeeper(address _keeper) external;
+// Set new primary keeper (owner only)
+function setKeeper(address _newKeeper) external;
+
+// Authorize or revoke a keeper (owner only)
+function setKeeperAuthorization(address _keeper, bool _authorized) external;
 
 // Set EMA alpha (owner only)
-function setEmaAlpha(uint8 _alpha) external;
+function setEmaAlpha(uint8 _newAlpha) external;
 
 // Set staleness threshold (owner only)
-function setStalenessThreshold(uint256 _threshold) external;
+function setStalenessThreshold(uint256 _newThreshold) external;
 
 // Transfer ownership (owner only)
 function transferOwnership(address _newOwner) external;
@@ -533,16 +606,27 @@ function transferOwnership(address _newOwner) external;
 ### Events
 
 ```solidity
+// Emitted when sentiment score is updated
 event SentimentUpdated(
-    uint8 indexed oldScore,
-    uint8 indexed newScore,
-    uint8 emaScore,
+    uint8 indexed previousScore,
+    uint8 indexed rawScore,
+    uint8 smoothedScore,
     uint256 timestamp
 );
 
-event KeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
-event EmaAlphaUpdated(uint8 oldAlpha, uint8 newAlpha);
-event StalenessThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+// Emitted when primary keeper changes
+event PrimaryKeeperUpdated(address indexed previousKeeper, address indexed newKeeper);
+
+// Emitted when keeper authorization changes
+event KeeperAuthorizationUpdated(address indexed keeper, bool isAuthorized);
+
+// Emitted when EMA alpha changes
+event EmaAlphaUpdated(uint8 previousAlpha, uint8 newAlpha);
+
+// Emitted when staleness threshold changes
+event StalenessThresholdUpdated(uint256 previousThreshold, uint256 newThreshold);
+
+// Emitted when ownership transfers
 event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 ```
 
@@ -553,27 +637,29 @@ event OwnershipTransferred(address indexed previousOwner, address indexed newOwn
 ```
 sentiment-fee-hook/
 ├── src/
-│   └── SentimentFeeHook.sol       # Main hook contract
+│   └── SentimentFeeHook.sol       # Main hook contract (professionally documented)
 ├── test/
-│   ├── SentimentFeeHook.t.sol     # Unit tests (32)
-│   ├── SentimentFeeHook.integration.t.sol  # Integration tests (8)
+│   ├── SentimentFeeHook.t.sol     # Unit tests (42 tests)
+│   ├── SentimentFeeHook.integration.t.sol  # Integration tests (8 tests)
 │   └── utils/
-│       └── HookMiner.sol          # CREATE2 address mining
+│       └── HookMiner.sol          # CREATE2 address mining utility
 ├── script/
 │   ├── DeploySentimentHook.s.sol  # Production deployment
 │   ├── DeployLocal.s.sol          # Local Anvil deployment
-│   ├── DeployFullDemo.s.sol       # Full demo with tokens
+│   ├── DeployFullDemo.s.sol       # Full demo with mock tokens
 │   ├── CreatePool.s.sol           # Pool creation helper
+│   ├── DemoSwaps.s.sol            # Swap demonstration script
 │   ├── MineHookAddress.s.sol      # Address mining utility
-│   └── NetworkConfig.sol          # Chain configurations
+│   └── NetworkConfig.sol          # Multi-chain configurations
 ├── keeper/
 │   ├── src/
 │   │   ├── keeper.ts              # Basic keeper (2 sources)
-│   │   └── multi-source-keeper.ts # Advanced keeper (8 sources)
+│   │   └── multi-source-keeper.ts # Production keeper (8 sources, jitter)
 │   ├── package.json
 │   ├── tsconfig.json
-│   ├── .env.example
-│   └── .env
+│   └── .env.example
+├── frontend/
+│   └── demo.html                  # Interactive demo UI
 ├── lib/                           # Foundry dependencies
 ├── foundry.toml
 └── README.md

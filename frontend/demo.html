@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentiment Fee Hook - Live Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 30px 20px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header p {
+      color: #888;
+      font-size: 14px;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 800px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 24px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    /* Token Selection */
+    .token-select {
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .token-select-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .token-select-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .token-select-box:hover {
+      border-color: rgba(255,255,255,0.2);
+    }
+
+    .token-select-box.selected {
+      border-color: #a78bfa;
+    }
+
+    .token-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .token-icon img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+    }
+
+    .token-info {
+      flex: 1;
+    }
+
+    .token-name {
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    .token-symbol {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .token-price {
+      text-align: right;
+    }
+
+    .token-price-value {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .token-price-change {
+      font-size: 11px;
+    }
+
+    .token-price-change.positive { color: #22c55e; }
+    .token-price-change.negative { color: #ef4444; }
+
+    /* Search Dropdown */
+    .search-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #1a1a2e;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      margin-top: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+
+    .search-dropdown.active {
+      display: block;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(0,0,0,0.3);
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .search-input::placeholder {
+      color: #666;
+    }
+
+    .search-results {
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .search-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .search-item:hover {
+      background: rgba(255,255,255,0.05);
+    }
+
+    .search-item img {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+    }
+
+    .search-item-name {
+      font-size: 14px;
+    }
+
+    .search-item-symbol {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+    }
+
+    /* Pool Display */
+    .pool-display {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 12px;
+      margin: 20px 0;
+    }
+
+    .pool-tokens {
+      display: flex;
+      align-items: center;
+    }
+
+    .pool-token-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 3px solid #1a1a2e;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .pool-token-icon:last-child {
+      margin-left: -16px;
+    }
+
+    .pool-token-icon img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+    }
+
+    .pool-name {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    /* Swap Section */
+    .swap-section {
+      margin-top: 20px;
+    }
+
+    .swap-box {
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 8px;
+    }
+
+    .swap-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .swap-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .swap-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      font-size: 24px;
+      font-weight: 300;
+      color: #fff;
+      outline: none;
+      min-width: 0;
+    }
+
+    .swap-token-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.1);
+      padding: 8px 12px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+
+    .swap-token-badge img {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+    }
+
+    .swap-arrow {
+      text-align: center;
+      color: #666;
+      font-size: 18px;
+    }
+
+    /* Sentiment Panel */
+    .sentiment-display {
+      text-align: center;
+      padding: 24px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%);
+      border: 1px solid rgba(139,92,246,0.2);
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+
+    .sentiment-label {
+      font-size: 11px;
+      color: #a78bfa;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+    }
+
+    .sentiment-score {
+      font-size: 64px;
+      font-weight: 200;
+      line-height: 1;
+      transition: color 0.3s;
+    }
+
+    .sentiment-mood {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 8px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      display: inline-block;
+    }
+
+    /* Fee Display */
+    .fee-display {
+      background: rgba(0,0,0,0.3);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .fee-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+
+    .fee-value {
+      font-size: 48px;
+      font-weight: 200;
+    }
+
+    .fee-value span {
+      font-size: 24px;
+      color: #888;
+    }
+
+    .fee-bps {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    /* Sentiment Sources */
+    .sources-section {
+      margin-top: 20px;
+    }
+
+    .source-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 13px;
+    }
+
+    .source-item:last-child {
+      border-bottom: none;
+    }
+
+    .source-name {
+      color: #888;
+    }
+
+    .source-value {
+      font-weight: 500;
+    }
+
+    .source-value.positive { color: #22c55e; }
+    .source-value.negative { color: #ef4444; }
+    .source-value.neutral { color: #eab308; }
+
+    /* Formula */
+    .formula-box {
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .formula-title {
+      font-size: 10px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .formula {
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 13px;
+      color: #888;
+      text-align: center;
+    }
+
+    .formula .hl { color: #a78bfa; }
+    .formula .result { color: #22c55e; }
+
+    /* Fee Comparison */
+    .comparison-bar {
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 12px;
+    }
+
+    .comparison-title {
+      font-size: 10px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .bar-container {
+      position: relative;
+      height: 32px;
+      background: linear-gradient(90deg, #22c55e 0%, #eab308 50%, #ef4444 100%);
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+
+    .bar-marker {
+      position: absolute;
+      top: -8px;
+      bottom: -8px;
+      width: 4px;
+      background: #fff;
+      border-radius: 2px;
+      transform: translateX(-50%);
+      box-shadow: 0 0 10px rgba(255,255,255,0.5);
+      transition: left 0.3s;
+    }
+
+    .bar-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #666;
+    }
+
+    /* Impact Summary */
+    .impact-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .impact-row:last-child {
+      border-bottom: none;
+    }
+
+    .impact-label { color: #888; }
+    .impact-value { font-weight: 500; }
+    .impact-value.save { color: #22c55e; }
+    .impact-value.extra { color: #ef4444; }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid rgba(255,255,255,0.1);
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Mode Toggle */
+    .mode-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .mode-btn {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #888;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-btn:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .mode-btn.active {
+      background: rgba(139,92,246,0.2);
+      border-color: #a78bfa;
+      color: #fff;
+    }
+
+    /* Simulation Slider */
+    .sim-slider {
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(139,92,246,0.1);
+      border: 1px solid rgba(139,92,246,0.2);
+      border-radius: 12px;
+    }
+
+    .sim-label {
+      font-size: 11px;
+      color: #a78bfa;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .slider {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #22c55e 0%, #eab308 50%, #ef4444 100%);
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      cursor: grab;
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #666;
+      margin-top: 8px;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Sentiment Fee Hook</h1>
+      <p>Create a pool with any two tokens and see dynamic fees based on real market sentiment</p>
+      <div style="display: flex; justify-content: center; gap: 12px; margin-top: 12px;">
+        <span style="background: rgba(72,219,251,0.2); color: #48dbfb; padding: 4px 12px; border-radius: 12px; font-size: 11px;">Multi-Keeper Support</span>
+        <span style="background: rgba(254,202,87,0.2); color: #feca57; padding: 4px 12px; border-radius: 12px; font-size: 11px;">Anti-Frontrunning Jitter</span>
+        <span style="background: rgba(167,139,250,0.2); color: #a78bfa; padding: 4px 12px; border-radius: 12px; font-size: 11px;">EMA Smoothing</span>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <!-- Left: Token Selection & Swap -->
+      <div>
+        <div class="card">
+          <div class="card-title">Select Pool Tokens</div>
+
+          <!-- Token A -->
+          <div class="token-select" id="tokenASelect">
+            <div class="token-select-label">Token A</div>
+            <div class="token-select-box" onclick="openSearch('A')">
+              <div class="token-icon" id="tokenAIcon">?</div>
+              <div class="token-info">
+                <div class="token-name" id="tokenAName">Select token</div>
+                <div class="token-symbol" id="tokenASymbol">Click to search</div>
+              </div>
+              <div class="token-price">
+                <div class="token-price-value" id="tokenAPrice">-</div>
+                <div class="token-price-change" id="tokenAChange">-</div>
+              </div>
+            </div>
+            <div class="search-dropdown" id="searchDropdownA">
+              <input type="text" class="search-input" placeholder="Search token..." oninput="searchTokens('A', this.value)">
+              <div class="search-results" id="searchResultsA"></div>
+            </div>
+          </div>
+
+          <!-- Token B -->
+          <div class="token-select" id="tokenBSelect">
+            <div class="token-select-label">Token B</div>
+            <div class="token-select-box" onclick="openSearch('B')">
+              <div class="token-icon" id="tokenBIcon">?</div>
+              <div class="token-info">
+                <div class="token-name" id="tokenBName">Select token</div>
+                <div class="token-symbol" id="tokenBSymbol">Click to search</div>
+              </div>
+              <div class="token-price">
+                <div class="token-price-value" id="tokenBPrice">-</div>
+                <div class="token-price-change" id="tokenBChange">-</div>
+              </div>
+            </div>
+            <div class="search-dropdown" id="searchDropdownB">
+              <input type="text" class="search-input" placeholder="Search token..." oninput="searchTokens('B', this.value)">
+              <div class="search-results" id="searchResultsB"></div>
+            </div>
+          </div>
+
+          <!-- Pool Display -->
+          <div class="pool-display" id="poolDisplay" style="display: none;">
+            <div class="pool-tokens">
+              <div class="pool-token-icon" id="poolIconA"></div>
+              <div class="pool-token-icon" id="poolIconB"></div>
+            </div>
+            <div class="pool-name" id="poolName">-</div>
+          </div>
+
+          <!-- Swap Interface -->
+          <div class="swap-section" id="swapSection" style="display: none;">
+            <div class="swap-box">
+              <div class="swap-label">You pay</div>
+              <div class="swap-row">
+                <input type="number" class="swap-input" id="swapInput" value="1" oninput="calculateSwap()">
+                <div class="swap-token-badge" id="swapTokenA">
+                  <img src="" alt="">
+                  <span>-</span>
+                </div>
+              </div>
+            </div>
+            <div class="swap-arrow">↓</div>
+            <div class="swap-box">
+              <div class="swap-label">You receive (after fee)</div>
+              <div class="swap-row">
+                <input type="text" class="swap-input" id="swapOutput" value="-" readonly>
+                <div class="swap-token-badge" id="swapTokenB">
+                  <img src="" alt="">
+                  <span>-</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fee Impact -->
+            <div style="margin-top: 16px;">
+              <div class="impact-row">
+                <span class="impact-label">Swap Value</span>
+                <span class="impact-value" id="swapValue">-</span>
+              </div>
+              <div class="impact-row">
+                <span class="impact-label">Fee Amount</span>
+                <span class="impact-value" id="feeAmount">-</span>
+              </div>
+              <div class="impact-row">
+                <span class="impact-label">vs Uniswap 0.30%</span>
+                <span class="impact-value" id="feeDiff">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Sentiment & Fee -->
+      <div>
+        <div class="card">
+          <div class="card-title">Dynamic Fee Calculation</div>
+
+          <!-- Mode Toggle -->
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="liveBtn" onclick="setMode('live')">Live Data</button>
+            <button class="mode-btn" id="simBtn" onclick="setMode('simulate')">Simulate</button>
+          </div>
+
+          <!-- Sentiment Display -->
+          <div class="sentiment-display">
+            <div class="sentiment-label">Market Sentiment</div>
+            <div class="sentiment-score" id="sentimentScore">--</div>
+            <div class="sentiment-mood" id="sentimentMood">Select tokens</div>
+          </div>
+
+          <!-- Simulation Slider (hidden by default) -->
+          <div class="sim-slider hidden" id="simSlider">
+            <div class="sim-label">Simulate Sentiment</div>
+            <input type="range" class="slider" min="0" max="100" value="50" id="sentimentSlider" oninput="simulateSentiment(this.value)">
+            <div class="slider-labels">
+              <span>Extreme Fear</span>
+              <span>Extreme Greed</span>
+            </div>
+          </div>
+
+          <!-- Fee Display -->
+          <div class="fee-display">
+            <div class="fee-label">Pool Swap Fee</div>
+            <div class="fee-value" id="feeValue">--<span>%</span></div>
+            <div class="fee-bps" id="feeBps">-- bps</div>
+          </div>
+
+          <!-- Formula -->
+          <div class="formula-box">
+            <div class="formula-title">Fee Formula</div>
+            <div class="formula">
+              fee = 2500 + (<span class="hl" id="formulaSentiment">--</span> × 19) = <span class="result" id="formulaResult">--</span> bps
+            </div>
+          </div>
+
+          <!-- Fee Range Bar -->
+          <div class="comparison-bar">
+            <div class="comparison-title">Fee Position (0.25% - 0.44%)</div>
+            <div class="bar-container">
+              <div class="bar-marker" id="feeMarker" style="left: 50%;"></div>
+            </div>
+            <div class="bar-labels">
+              <span>0.25% (Fear)</span>
+              <span>0.44% (Greed)</span>
+            </div>
+          </div>
+
+          <!-- Sentiment Sources -->
+          <div class="sources-section" id="sourcesSection">
+            <div class="card-title" style="margin-top: 20px;">Sentiment Factors</div>
+            <div id="sourcesList">
+              <div class="source-item">
+                <span class="source-name">24h Price Change</span>
+                <span class="source-value" id="src24h">-</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">7d Price Change</span>
+                <span class="source-value" id="src7d">-</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">30d Price Change</span>
+                <span class="source-value" id="src30d">-</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">Market Cap Rank</span>
+                <span class="source-value" id="srcRank">-</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">ATH Distance</span>
+                <span class="source-value" id="srcAth">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+    const MIN_FEE = 2500;
+    const MAX_FEE = 4400;
+    const FEE_RANGE = 1900;
+
+    let tokenA = null;
+    let tokenB = null;
+    let searchTimeout = null;
+    let mode = 'live';
+    let currentSentiment = 50;
+
+    // Search functionality
+    function openSearch(token) {
+      document.querySelectorAll('.search-dropdown').forEach(d => d.classList.remove('active'));
+      const dropdown = document.getElementById(`searchDropdown${token}`);
+      dropdown.classList.add('active');
+      dropdown.querySelector('input').focus();
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.token-select')) {
+        document.querySelectorAll('.search-dropdown').forEach(d => d.classList.remove('active'));
+      }
+    });
+
+    async function searchTokens(token, query) {
+      clearTimeout(searchTimeout);
+      if (query.length < 2) {
+        document.getElementById(`searchResults${token}`).innerHTML = '';
+        return;
+      }
+
+      searchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(query)}`);
+          const data = await res.json();
+          renderSearchResults(token, data.coins?.slice(0, 10) || []);
+        } catch (err) {
+          console.error('Search error:', err);
+        }
+      }, 300);
+    }
+
+    function renderSearchResults(token, coins) {
+      const container = document.getElementById(`searchResults${token}`);
+      if (coins.length === 0) {
+        container.innerHTML = '<div style="padding: 16px; color: #666; text-align: center;">No results</div>';
+        return;
+      }
+
+      container.innerHTML = coins.map(coin => `
+        <div class="search-item" onclick="selectToken('${token}', '${coin.id}')">
+          <img src="${coin.thumb}" alt="${coin.name}">
+          <div>
+            <div class="search-item-name">${coin.name}</div>
+            <div class="search-item-symbol">${coin.symbol}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectToken(token, coinId) {
+      document.querySelectorAll('.search-dropdown').forEach(d => d.classList.remove('active'));
+
+      // Show loading
+      document.getElementById(`token${token}Name`).textContent = 'Loading...';
+
+      try {
+        const res = await fetch(`${COINGECKO_API}/coins/${coinId}?localization=false&tickers=false&community_data=false&developer_data=false`);
+        const data = await res.json();
+
+        const tokenData = {
+          id: data.id,
+          name: data.name,
+          symbol: data.symbol.toUpperCase(),
+          image: data.image?.small,
+          price: data.market_data?.current_price?.usd || 0,
+          change24h: data.market_data?.price_change_percentage_24h || 0,
+          change7d: data.market_data?.price_change_percentage_7d || 0,
+          change30d: data.market_data?.price_change_percentage_30d || 0,
+          athChange: data.market_data?.ath_change_percentage?.usd || 0,
+          rank: data.market_cap_rank || 999
+        };
+
+        if (token === 'A') {
+          tokenA = tokenData;
+        } else {
+          tokenB = tokenData;
+        }
+
+        // Update UI
+        document.getElementById(`token${token}Icon`).innerHTML = `<img src="${tokenData.image}" alt="">`;
+        document.getElementById(`token${token}Name`).textContent = tokenData.name;
+        document.getElementById(`token${token}Symbol`).textContent = tokenData.symbol;
+        document.getElementById(`token${token}Price`).textContent = '$' + tokenData.price.toLocaleString();
+
+        const changeEl = document.getElementById(`token${token}Change`);
+        changeEl.textContent = (tokenData.change24h >= 0 ? '+' : '') + tokenData.change24h.toFixed(2) + '%';
+        changeEl.className = 'token-price-change ' + (tokenData.change24h >= 0 ? 'positive' : 'negative');
+
+        document.querySelector(`#token${token}Select .token-select-box`).classList.add('selected');
+
+        // If both tokens selected, calculate sentiment
+        if (tokenA && tokenB) {
+          updatePool();
+        }
+
+      } catch (err) {
+        console.error('Token fetch error:', err);
+        document.getElementById(`token${token}Name`).textContent = 'Error loading';
+      }
+    }
+
+    function updatePool() {
+      // Show pool display
+      document.getElementById('poolDisplay').style.display = 'flex';
+      document.getElementById('swapSection').style.display = 'block';
+
+      // Update pool icons
+      document.getElementById('poolIconA').innerHTML = `<img src="${tokenA.image}" alt="">`;
+      document.getElementById('poolIconB').innerHTML = `<img src="${tokenB.image}" alt="">`;
+      document.getElementById('poolName').textContent = `${tokenA.symbol} / ${tokenB.symbol}`;
+
+      // Update swap badges
+      document.querySelector('#swapTokenA img').src = tokenA.image;
+      document.querySelector('#swapTokenA span').textContent = tokenA.symbol;
+      document.querySelector('#swapTokenB img').src = tokenB.image;
+      document.querySelector('#swapTokenB span').textContent = tokenB.symbol;
+
+      // Calculate sentiment from both tokens
+      calculateSentiment();
+    }
+
+    function calculateSentiment() {
+      if (!tokenA || !tokenB) return;
+
+      // Average the metrics from both tokens
+      const avg24h = (tokenA.change24h + tokenB.change24h) / 2;
+      const avg7d = (tokenA.change7d + tokenB.change7d) / 2;
+      const avg30d = (tokenA.change30d + tokenB.change30d) / 2;
+      const avgAth = (tokenA.athChange + tokenB.athChange) / 2;
+      const avgRank = (tokenA.rank + tokenB.rank) / 2;
+
+      // Update sources display
+      updateSourceDisplay('src24h', avg24h, '%');
+      updateSourceDisplay('src7d', avg7d, '%');
+      updateSourceDisplay('src30d', avg30d, '%');
+      document.getElementById('srcRank').textContent = '#' + Math.round(avgRank);
+      document.getElementById('srcRank').className = 'source-value ' + (avgRank < 50 ? 'positive' : avgRank < 200 ? 'neutral' : 'negative');
+      updateSourceDisplay('srcAth', avgAth, '%');
+
+      // Calculate sentiment score (0-100)
+      // Map each metric to 0-100 range
+      const score24h = Math.min(100, Math.max(0, (avg24h + 15) * 3.33)); // -15% to +15%
+      const score7d = Math.min(100, Math.max(0, (avg7d + 25) * 2)); // -25% to +25%
+      const score30d = Math.min(100, Math.max(0, (avg30d + 40) * 1.25)); // -40% to +40%
+      const scoreAth = Math.min(100, Math.max(0, (avgAth + 80) * 0.625)); // -80% to +80%
+      const scoreRank = Math.min(100, Math.max(0, 100 - (avgRank / 5))); // Lower rank = higher score
+
+      // Weighted average
+      const sentiment = Math.round(
+        score24h * 0.30 +
+        score7d * 0.25 +
+        score30d * 0.20 +
+        scoreAth * 0.15 +
+        scoreRank * 0.10
+      );
+
+      currentSentiment = sentiment;
+
+      if (mode === 'live') {
+        updateFeeDisplay(sentiment);
+      }
+
+      document.getElementById('sentimentSlider').value = sentiment;
+    }
+
+    function updateSourceDisplay(id, value, suffix = '') {
+      const el = document.getElementById(id);
+      el.textContent = (value >= 0 ? '+' : '') + value.toFixed(2) + suffix;
+      el.className = 'source-value ' + (value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral');
+    }
+
+    function updateFeeDisplay(sentiment) {
+      // Calculate fee
+      const feeBps = MIN_FEE + Math.floor((sentiment * FEE_RANGE) / 100);
+      const feePercent = feeBps / 10000;
+
+      // Update sentiment display
+      document.getElementById('sentimentScore').textContent = sentiment;
+
+      let mood, color, bgColor;
+      if (sentiment <= 20) {
+        mood = 'Extreme Fear'; color = '#22c55e'; bgColor = 'rgba(34,197,94,0.15)';
+      } else if (sentiment <= 40) {
+        mood = 'Fear'; color = '#4ade80'; bgColor = 'rgba(74,222,128,0.15)';
+      } else if (sentiment <= 60) {
+        mood = 'Neutral'; color = '#eab308'; bgColor = 'rgba(234,179,8,0.15)';
+      } else if (sentiment <= 80) {
+        mood = 'Greed'; color = '#f87171'; bgColor = 'rgba(248,113,113,0.15)';
+      } else {
+        mood = 'Extreme Greed'; color = '#ef4444'; bgColor = 'rgba(239,68,68,0.15)';
+      }
+
+      const moodEl = document.getElementById('sentimentMood');
+      moodEl.textContent = mood;
+      moodEl.style.color = color;
+      moodEl.style.background = bgColor;
+      document.getElementById('sentimentScore').style.color = color;
+
+      // Update fee display
+      document.getElementById('feeValue').innerHTML = feePercent.toFixed(2) + '<span>%</span>';
+      document.getElementById('feeBps').textContent = feeBps + ' bps';
+
+      // Update formula
+      document.getElementById('formulaSentiment').textContent = sentiment;
+      document.getElementById('formulaResult').textContent = feeBps;
+
+      // Update marker position
+      const markerPos = ((feeBps - MIN_FEE) / FEE_RANGE) * 100;
+      document.getElementById('feeMarker').style.left = markerPos + '%';
+
+      // Update swap calculation
+      calculateSwap();
+    }
+
+    function calculateSwap() {
+      if (!tokenA || !tokenB) return;
+
+      const inputAmount = parseFloat(document.getElementById('swapInput').value) || 0;
+      const sentiment = mode === 'live' ? currentSentiment : parseInt(document.getElementById('sentimentSlider').value);
+      const feeBps = MIN_FEE + Math.floor((sentiment * FEE_RANGE) / 100);
+      const feePercent = feeBps / 10000;
+
+      // Calculate values
+      const inputValue = inputAmount * tokenA.price;
+      const feeAmount = inputValue * feePercent;
+      const outputValue = inputValue - feeAmount;
+      const outputAmount = outputValue / tokenB.price;
+
+      // Update UI
+      document.getElementById('swapOutput').value = outputAmount.toLocaleString('en-US', { maximumFractionDigits: 6 });
+      document.getElementById('swapValue').textContent = '$' + inputValue.toLocaleString('en-US', { maximumFractionDigits: 2 });
+      document.getElementById('feeAmount').textContent = '$' + feeAmount.toFixed(4);
+
+      // Compare to Uniswap fixed 0.30%
+      const uniswapFee = inputValue * 0.003;
+      const diff = feeAmount - uniswapFee;
+      const diffEl = document.getElementById('feeDiff');
+
+      if (diff < -0.0001) {
+        diffEl.textContent = '-$' + Math.abs(diff).toFixed(4) + ' saved';
+        diffEl.className = 'impact-value save';
+      } else if (diff > 0.0001) {
+        diffEl.textContent = '+$' + diff.toFixed(4) + ' extra';
+        diffEl.className = 'impact-value extra';
+      } else {
+        diffEl.textContent = '$0.00';
+        diffEl.className = 'impact-value';
+      }
+    }
+
+    function setMode(newMode) {
+      mode = newMode;
+      document.getElementById('liveBtn').classList.toggle('active', mode === 'live');
+      document.getElementById('simBtn').classList.toggle('active', mode === 'simulate');
+      document.getElementById('simSlider').classList.toggle('hidden', mode === 'live');
+      document.getElementById('sourcesSection').classList.toggle('hidden', mode === 'simulate');
+
+      if (mode === 'live') {
+        updateFeeDisplay(currentSentiment);
+      } else {
+        simulateSentiment(document.getElementById('sentimentSlider').value);
+      }
+    }
+
+    function simulateSentiment(value) {
+      if (mode === 'simulate') {
+        updateFeeDisplay(parseInt(value));
+      }
+    }
+  </script>
+</body>
+</html>
