@@ -13,6 +13,45 @@ line_length = 120
 tab_width = 4
 bracket_spacing = false
 
+# ════════════════════════════════════════════════════════════════════════════
+# INVARIANT TESTING CONFIGURATION - EXPLAINED
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Invariant tests call your contract functions randomly many times.
+# These settings control how thorough the testing is.
+
+[invariant]
+# Number of random call SEQUENCES to run
+# Each sequence is `depth` calls long
+# More runs = more confidence, but slower
+# Start low (256) for development, increase for CI (1024+)
+runs = 256
+
+# Number of calls PER sequence
+# depth = 15 means each run tries 15 random function calls
+# Higher = tests more complex state transitions
+# But also slower and uses more memory
+depth = 15
+
+# Whether unexpected reverts should fail the test
+# Set to FALSE initially - some call sequences may legitimately revert
+# (e.g., unauthorized caller, invalid state)
+# The handler should prevent most reverts with bound() and vm.assume()
+fail_on_revert = false
+
+# Random seed for reproducibility
+# Comment out for truly random runs
+# Uncomment and set a value to reproduce a specific failure
+# seed = 12345
+
+# Shrinking tries to find minimal failing case
+# Set to true to get simpler reproduction steps when tests fail
+shrink_run_limit = 5000
+
+# Dictionary - words found in your code that fuzzer should try
+# Foundry auto-discovers these, but you can tune:
+dictionary_weight = 40
+
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"
 sepolia = "${SEPOLIA_RPC_URL}"

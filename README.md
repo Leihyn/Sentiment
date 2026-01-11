@@ -5,7 +5,7 @@ A Uniswap v4 hook that dynamically adjusts swap fees based on real-time market s
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue)
 ![Foundry](https://img.shields.io/badge/Foundry-Latest-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/Tests-50%20Passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-83%20Passing-brightgreen)
 
 ---
 
@@ -41,7 +41,7 @@ The Sentiment-Responsive Fee Hook is a Uniswap v4 hook that implements dynamic f
 - **EMA Smoothing**: Prevents fee manipulation through exponential moving average
 - **Staleness Protection**: Falls back to default fee if data becomes stale
 - **Gas Efficient**: Minimal on-chain computation, off-chain data aggregation
-- **Fully Tested**: 50 comprehensive tests (42 unit + 8 integration)
+- **Fully Tested**: 83 comprehensive tests (42 unit + 8 integration + 11 invariant + 22 gas benchmarks)
 
 ---
 
@@ -298,7 +298,29 @@ forge coverage
 |------------|-------|-------------|
 | Unit Tests | 42 | Core functionality, access control, EMA, multi-keeper |
 | Integration Tests | 8 | Full swap flow with PoolManager |
-| **Total** | **50** | All passing |
+| Invariant Tests | 11 | Fuzzing-based property verification |
+| Gas Benchmarks | 22 | Performance measurements |
+| **Total** | **83** | All passing |
+
+### Running Invariant Tests
+
+```bash
+# Run invariant tests
+forge test --match-contract SentimentHookInvariant
+
+# With verbose output (shows call sequences)
+forge test --match-contract SentimentHookInvariant -vvv
+
+# More thorough (for CI)
+forge test --match-contract SentimentHookInvariant --fuzz-runs 1024
+```
+
+### Running Gas Benchmarks
+
+```bash
+# Run with gas report
+forge test --match-contract GasBenchmark --gas-report
+```
 
 ---
 
@@ -423,6 +445,15 @@ Total cost: **$0/month** for data
 
 ## Security Considerations
 
+### Trust Assumptions
+
+| Component | Trust Level | Rationale |
+|-----------|-------------|-----------|
+| **Keeper** | Semi-trusted | EMA smoothing limits damage from malicious updates to 30% per update |
+| **Owner** | Fully trusted | Can change keeper, parameters; should be multisig for production |
+| **Uniswap v4** | Trusted | Core protocol; hook relies on correct pool behavior |
+| **Data Sources** | Untrusted | 8 sources aggregated off-chain with weighted consensus |
+
 ### Access Control
 
 | Function | Access | Protection |
@@ -434,26 +465,96 @@ Total cost: **$0/month** for data
 | `setStalenessThreshold()` | Owner only | `onlyOwner` modifier |
 | `transferOwnership()` | Owner only | `onlyOwner` modifier |
 
+### Invariants (Formally Tested)
+
+The following properties are verified by invariant fuzzing tests (`test/invariant/`):
+
+```
+INVARIANT 1: Fee Bounds
+├── Fee always in range [2500, 4400] bps when data is fresh
+└── Fee equals 3000 bps (DEFAULT_FEE) when data is stale
+
+INVARIANT 2: Sentiment Bounds
+└── sentimentScore always in range [0, 100]
+
+INVARIANT 3: EMA Smoothing Limits
+├── Single update changes score by at most (alpha)% of the difference
+├── With alpha=30: max change = 30% of |newScore - oldScore|
+└── EMA always moves TOWARD input value, never away
+
+INVARIANT 4: Staleness Logic
+├── isStale() == true when block.timestamp > lastUpdate + threshold
+├── isStale() == false when block.timestamp <= lastUpdate + threshold
+└── Fee calculation uses DEFAULT_FEE when stale
+
+INVARIANT 5: Authorization Consistency
+├── Primary keeper is always in isKeeper mapping
+└── Only authorized keepers can call updateSentiment()
+
+INVARIANT 6: Time Sanity
+└── lastUpdateTimestamp never exceeds current block.timestamp
+
+INVARIANT 7: Fee Formula Correctness
+└── fee == MIN_FEE + (sentimentScore × FEE_RANGE / 100) when not stale
+
+INVARIANT 8: Parameter Bounds
+├── emaAlpha <= 100
+└── stalenessThreshold >= 1 hour
+```
+
+### Attack Vectors Considered
+
+| Attack | Risk | Mitigation |
+|--------|------|------------|
+| **Sentiment Manipulation** | Medium | EMA smoothing limits single-update impact to 30% |
+| **Stale Data Attack** | Low | Default fee (0.30%) used automatically after 6 hours |
+| **Keeper Compromise** | Medium | Multi-keeper support; EMA limits damage; owner can revoke |
+| **Front-running Updates** | Low | Randomized timing jitter; EMA makes prediction difficult |
+| **Fee Griefing** | Low | Fees bounded to safe range [0.25%, 0.44%] |
+| **Oracle Manipulation** | Medium | 8 independent sources with weighted aggregation |
+| **Timestamp Manipulation** | Very Low | Validators can only shift ±15s; insufficient for staleness bypass |
+
+### Gas Benchmarks
+
+Critical path performance (every swap):
+
+| Function | Gas (warm) | Gas (cold) | Target |
+|----------|------------|------------|--------|
+| `getCurrentFee()` | ~5,242 | ~7,450 | < 10,000 ✓ |
+| `isStale()` | ~4,488 | ~4,488 | < 5,000 ✓ |
+
+Periodic operations (every ~4 hours):
+
+| Function | Gas | Notes |
+|----------|-----|-------|
+| `updateSentiment()` | ~35,773 | Writes 2 storage slots + emits event |
+
 ### Manipulation Resistance
 
-1. **EMA Smoothing**: Prevents single-update manipulation
-2. **Staleness Protection**: Falls back to default fee if data is old
-3. **Bounded Fees**: Fees capped between MIN and MAX
-4. **Score Validation**: Raw scores must be 0-100
+1. **EMA Smoothing**: Prevents single-update manipulation (max 30% influence per update)
+2. **Staleness Protection**: Falls back to default fee if data is old (6 hours)
+3. **Bounded Fees**: Fees hard-capped between 0.25% and 0.44%
+4. **Score Validation**: Raw scores must be 0-100 (reverts otherwise)
+5. **Multi-Source Aggregation**: 8 independent data sources weighted off-chain
 
 ### Risks & Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Keeper compromise | EMA limits impact; owner can replace keeper; multi-keeper support |
-| Data source manipulation | 8 sources with weighted aggregation |
-| Stale data | Auto-fallback to default fee after 6 hours |
-| Front-running updates | EMA smoothing + randomized timing jitter |
-| Single point of failure | Multi-keeper authorization system |
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Keeper compromise | Low | Medium | EMA limits impact; owner can replace; multi-keeper |
+| All data sources fail | Very Low | Low | Staleness fallback to safe default fee |
+| Smart contract bug | Low | High | 50+ unit tests, 10 invariant tests, integration tests |
+| Uniswap v4 vulnerability | Very Low | Critical | Out of scope; rely on Uniswap security |
 
 ### Audit Status
 
-⚠️ **This code has not been audited.** Use at your own risk. Recommended to get professional audit before mainnet deployment with significant TVL.
+⚠️ **This code has not been audited.** Use at your own risk.
+
+**Recommended before mainnet deployment:**
+1. Professional security audit
+2. Bug bounty program
+3. Gradual TVL increase with monitoring
+4. Owner should be multisig (e.g., Gnosis Safe)
 
 ---
 
@@ -637,10 +738,14 @@ event OwnershipTransferred(address indexed previousOwner, address indexed newOwn
 ```
 sentiment-fee-hook/
 ├── src/
-│   └── SentimentFeeHook.sol       # Main hook contract (professionally documented)
+│   └── SentimentFeeHook.sol       # Main hook contract (gas-optimized)
 ├── test/
 │   ├── SentimentFeeHook.t.sol     # Unit tests (42 tests)
 │   ├── SentimentFeeHook.integration.t.sol  # Integration tests (8 tests)
+│   ├── GasBenchmark.t.sol         # Gas measurement tests (22 tests)
+│   ├── invariant/                 # Invariant fuzzing tests
+│   │   ├── SentimentHookInvariant.t.sol  # 11 property-based invariants
+│   │   └── Handler.t.sol          # Bounded action wrapper for fuzzing
 │   └── utils/
 │       └── HookMiner.sol          # CREATE2 address mining utility
 ├── script/
@@ -649,7 +754,7 @@ sentiment-fee-hook/
 │   ├── DeployFullDemo.s.sol       # Full demo with mock tokens
 │   ├── CreatePool.s.sol           # Pool creation helper
 │   ├── DemoSwaps.s.sol            # Swap demonstration script
-│   ├── MineHookAddress.s.sol      # Address mining utility
+│   ├── GasBenchmark.s.sol         # Gas benchmarking script
 │   └── NetworkConfig.sol          # Multi-chain configurations
 ├── keeper/
 │   ├── src/
@@ -659,9 +764,9 @@ sentiment-fee-hook/
 │   ├── tsconfig.json
 │   └── .env.example
 ├── frontend/
-│   └── demo.html                  # Interactive demo UI
+│   └── index.html                 # Interactive demo UI
 ├── lib/                           # Foundry dependencies
-├── foundry.toml
+├── foundry.toml                   # Build + invariant test config
 └── README.md
 ```
 
